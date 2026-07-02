@@ -1,0 +1,174 @@
+# Example output of capture_dataflow.py after operator review (--merge) — a
+# fictionalized small SaaS topology. Schema: references/configmap-schema.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vdr-dataflow
+  namespace: fedramp-vdr-trivy
+  labels:
+    app.kubernetes.io/managed-by: capture-dataflow
+    app.kubernetes.io/part-of: trivy-plugin-vdr
+data:
+  dataflow.yaml: |
+    schemaVersion: v1alpha1
+    generated: "2026-07-01T18:24:09Z"
+    generator: "capture-dataflow/0.1.0 (trivy-plugin-vdr-skills)"
+    sources:
+      - type: networkPolicy
+        verdict: absent
+        coverage: "0/9 workloads selected by >=1 policy; default-deny(ingress) namespaces: 0/2"
+      - type: meshAuthorization
+        verdict: absent
+        coverage: "0/9 workloads mesh-enrolled; 0/9 covered by >=1 authorization policy; default-deny namespaces: 0/2"
+      - type: declaredConfig
+        verdict: partial
+        coverage: "7/9 workloads with >=1 declared edge; 1 unresolved hosts"
+      - type: operatorDeclared
+        verdict: complete
+        coverage: "2 operator edges merged; 1 unresolved hosts resolved; declaredTopologyComplete=True"
+    attestation:
+      declaredTopologyComplete: true
+      attestedBy: "platform-ops@agency.example.gov"
+      date: "2026-07-01"
+      note: "reviewed with platform team; db-backup and metrics-agent edges added manually"
+    exposedWorkloads:
+      - namespace: webapp
+        kind: deployment
+        name: frontend
+        via:
+          - "ingress/webapp/frontend (class gce)"
+        publicHosts:
+          - portal.agency.example.gov
+      - namespace: webapp
+        kind: deployment
+        name: reports-api
+        via:
+          - "httproute/webapp/reports-route -> gateway webapp/external-gw (class gke-l7-regional-external-managed)"
+          - "ingress/webapp/reports-api (class gce)"
+        publicHosts:
+          - portal.agency.example.gov
+      - namespace: webapp
+        kind: deployment
+        name: auth-gateway
+        via:
+          - "ingress/webapp/auth (class gce)"
+        publicHosts:
+          - portal.agency.example.gov
+    edges:
+      - from:
+          namespace: webapp
+          kind: deployment
+          name: frontend
+        to:
+          namespace: webapp
+          service: reports-api
+          port: 8080
+          protocol: http
+        sources:
+          - declaredConfig
+        evidence:
+          - "env:REPORTS_API_URL"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: deployment
+          name: reports-api
+        to:
+          namespace: webapp
+          service: postgres-rw
+          port: 5432
+          protocol: postgres
+        sources:
+          - declaredConfig
+        evidence:
+          - "env:DATABASE_URL<-secret/reports-db-creds:url (value redacted; scheme+host+port only)"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: deployment
+          name: reports-api
+        to:
+          namespace: webapp
+          service: kafka
+          port: 9092
+          protocol: kafka
+        sources:
+          - declaredConfig
+        evidence:
+          - "env:KAFKA_BROKERS<-cm/reports-config:kafka-broker-list"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: deployment
+          name: worker
+        to:
+          namespace: webapp
+          service: auth-gateway
+          port: 9443
+          protocol: https
+        sources:
+          - declaredConfig
+        evidence:
+          - "env:SSO_BASE_URL; hairpin via portal.agency.example.gov"
+        internetTransit: true
+      - from:
+          namespace: webapp
+          kind: statefulset
+          name: kafka
+        to:
+          namespace: webapp
+          service: zookeeper
+          port: 2181
+          protocol: zookeeper
+        sources:
+          - declaredConfig
+        evidence:
+          - "env:KAFKA_ZOOKEEPER_CONNECT"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: statefulset
+          name: schema-registry
+        to:
+          namespace: webapp
+          service: kafka
+          port: 9092
+          protocol: kafka
+        sources:
+          - declaredConfig
+        evidence:
+          - "args:schema-registry"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: deployment
+          name: worker
+        to:
+          namespace: search
+          service: elasticsearch
+          port: 9200
+          protocol: elasticsearch
+        sources:
+          - operatorDeclared
+        evidence:
+          - "operator resolved host search-index"
+        internetTransit: false
+      - from:
+          namespace: webapp
+          kind: cronjob
+          name: db-backup
+        to:
+          namespace: webapp
+          service: postgres-rw
+          port: 5432
+          protocol: postgres
+        sources:
+          - operatorDeclared
+        evidence:
+          - "operator: backup job streams WAL from postgres-rw"
+        internetTransit: false
+    unresolved:
+      - host: api.vendor-saas.example.com
+        usedBy:
+          - webapp/deployment/notifications
+        note: "vendor SaaS, data leaves the cluster"

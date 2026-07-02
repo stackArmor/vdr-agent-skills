@@ -1,0 +1,26 @@
+# Operator-declared edges + attestation, captured during the agent-assisted review
+# and merged with: capture_dataflow.py --merge operator-edges.yaml --emit all
+# Format: references/configmap-schema.md ("operator-edges.yaml" section).
+attestation:
+  declaredTopologyComplete: true
+  attestedBy: "platform-ops@agency.example.gov"
+  date: "2026-07-01"
+  note: "reviewed with platform team; db-backup and metrics-agent edges added manually"
+edges:
+  # zero-edge workload (image-baked config): answered in review
+  - from: {namespace: webapp, kind: cronjob, name: db-backup}
+    to: {namespace: webapp, service: postgres-rw, port: 5432, protocol: postgres}
+    evidence: ["operator: backup job streams WAL from postgres-rw"]
+  # narrow a pathless-base-URL hairpin fan-out to the backend actually called
+  - from: {namespace: webapp, kind: deployment, name: worker}
+    to: {namespace: webapp, service: auth-gateway, port: 9443, protocol: https}
+    evidence: ["operator: worker only calls the SSO endpoint on the public host"]
+    internetTransit: true
+resolveUnresolved:
+  # host referenced in config that lives in a namespace outside the scan scope
+  - host: search-index
+    to: {namespace: search, service: elasticsearch, port: 9200}
+  # confirmed external destination: stays in `unresolved` with the note attached
+  - host: api.vendor-saas.example.com
+    external: true
+    note: "vendor SaaS, data leaves the cluster"

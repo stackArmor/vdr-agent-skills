@@ -1,0 +1,35 @@
+{
+  "name": "trivy-plugin-vdr-skills",
+  "owner": {
+    "name": "stackArmor",
+    "url": "https://github.com/stackArmor"
+  },
+  "metadata": {
+    "description": "Agent skills that generate the operator-attested ConfigMaps consumed by trivy-plugin-vdr for FedRAMP VDR/VER: cluster dataflow capture (internet-reachability taint graph) and asset-archetype/Class attestations."
+  },
+  "plugins": [
+    {
+      "name": "trivy-plugin-vdr-skills",
+      "source": ".",
+      "description": "Two skills for FedRAMP VDR/VER evidence generation with trivy-plugin-vdr: capture-dataflow analyzes NetworkPolicies, service-mesh authorization resources, optional Hubble/mesh flow exports, and workload env/Secret/ConfigMap declarations (in that order of preference, with a sufficiency evaluation after each stage) to produce the vdr-dataflow ConfigMap and per-namespace Mermaid dataflow diagrams; generate-vdr-configmap interviews the operator (Certification Class with FedRAMP level mapping, agency scope, asset-archetype attestations) to produce the vdr-fedramp scoring ConfigMap. Artifacts are saved locally for review and applied by the operator (kubectl or GitOps) — the skills never modify the cluster.",
+      "version": "0.1.0",
+      "author": {
+        "name": "stackArmor",
+        "url": "https://github.com/stackArmor"
+      },
+      "homepage": "https://github.com/stackArmor/trivy-plugin-vdr-skills",
+      "repository": "https://github.com/stackArmor/trivy-plugin-vdr-skills",
+      "license": "MIT",
+      "keywords": [
+        "fedramp",
+        "vdr",
+        "vulnerability-management",
+        "trivy",
+        "kubernetes",
+        "internet-reachability",
+        "dataflow",
+        "configmap"
+      ]
+    }
+  ]
+}

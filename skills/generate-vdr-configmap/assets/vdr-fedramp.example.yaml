@@ -1,0 +1,64 @@
+# Example output of the generate-vdr-configmap skill for a fictional
+# FedRAMP Moderate (Class C), single-agency GKE estate.
+#
+# trivy-plugin-vdr reads fedramp-vdr-trivy/vdr-fedramp from the cluster
+# automatically. The embedded scoring.yaml is deep-merged over the plugin's
+# built-in rubric, which already carries the full archetype catalog, the
+# algorithm, the EPSS LEV threshold, and the H/H/H "unclassified" fail-safe —
+# so this file only carries the cluster-wide Class/scope and the rules for
+# cloud-managed components that cannot carry vdr.fedramp.io/* labels.
+# Customer-controlled workloads are labeled directly instead (see the
+# label-commands.sh emitted alongside this file).
+#
+# Review, then apply with:
+#   kubectl apply -f vdr-fedramp.yaml
+# or commit to the GitOps repo that owns cluster configuration.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fedramp-vdr-trivy
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vdr-fedramp
+  namespace: fedramp-vdr-trivy
+data:
+  # Attested 2026-07-01 by the ISSO: FedRAMP Moderate authorization -> Class C.
+  class: "C"
+  # Single-agency deployment. The shared reporting namespace is the one
+  # exception; it carries the vdr.fedramp.io/multi-agency=true namespace label
+  # (most-specific wins), so the cluster default stays "false".
+  multiAgency: "false"
+
+  # The "web" IngressClass is fronted by an external HTTPS load balancer
+  # provisioned in Terraform (standalone NEG), so reachability cannot be
+  # inferred from cluster state. Every Ingress using this class is treated as
+  # internet-reachable.
+  internetAccessibleIngressClasses: |
+    - web
+
+  scoring.yaml: |
+    # First match wins. nameRules win over namespaceRules. namespace is an
+    # optional glob on the workload namespace; match is a glob on the name.
+    nameRules:
+      # GCP workload-identity metadata server brokers credentials.
+      - {namespace: kube-system, match: gke-metadata-server, archetype: identity-secrets}
+      # Cluster networking dataplane / API control tunnel / storage CSI.
+      - {namespace: kube-system, match: kube-proxy, archetype: orchestrator}
+      - {namespace: kube-system, match: netd, archetype: orchestrator}
+      - {namespace: kube-system, match: "konnectivity*", archetype: orchestrator}
+      - {namespace: kube-system, match: "pdcsi*", archetype: orchestrator}
+      # Cluster DNS: metadata-only foundation service (CR:L, IR:H, AR:H).
+      - {namespace: kube-system, match: "kube-dns*", archetype: platform-foundation}
+      # Ingress default backend serves public traffic.
+      - {namespace: kube-system, match: l7-default-backend, archetype: public-edge}
+
+    namespaceRules:
+      # Managed Prometheus (observability only).
+      - {match: gmp-system, archetype: internal-tooling}
+      - {match: gmp-public, archetype: internal-tooling}
+      - {match: "gke-managed-*", archetype: internal-tooling}
+      # Everything else in kube-system (metrics agents, autoscalers, event
+      # exporter, ...) is low-privilege node/observability infrastructure.
+      - {match: kube-system, archetype: internal-tooling}
