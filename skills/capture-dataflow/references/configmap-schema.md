@@ -35,6 +35,7 @@ data:
 | `exposedWorkloads` | list | internet-exposed workloads and how they are exposed (below) |
 | `edges` | list | directed dataflow edges, payload direction (below) |
 | `unresolved` | list | hosts referenced in configuration that could not be mapped (below) |
+| `brokerCandidates` | list | possible dataflow links through cloud brokers (SQS, S3, Pub/Sub, ...) pending out-of-band IAM verification (below) |
 
 ### `sources[]`
 
@@ -160,6 +161,64 @@ Unresolved hosts are recorded, never guessed. They require operator triage (see
 `analysis-guide.md`): external SaaS, a Service in an unscanned namespace, a typo, or
 cluster-external infrastructure (CloudSQL, RDS, ...).
 
+### `brokerCandidates[]`
+
+A dataflow that runs through a cloud broker — SQS/SNS, S3, Pub/Sub, GCS, Service
+Bus/Event Hubs, managed Kafka — is invisible to the cluster: producer and consumer
+each make an *outbound* connection to a cloud endpoint, and the payload path between
+them exists only in the broker's access policy. Kubernetes data alone can never
+confirm it. A candidate records that workloads reference the same broker resource,
+plus the cloud identity each workload runs as, so the link can be verified — or
+excluded — later against IAM.
+
+```yaml
+brokerCandidates:
+  - broker: sqs                   # sqs | sns | s3 | pubsub | gcs | servicebus | eventhub | kafka | other
+    resource: "https://sqs.us-east-1.amazonaws.com/123456789012/ingest-queue"
+    referencedBy:
+      - workload: webapp/deployment/frontend
+        serviceAccount: webapp/frontend
+        identity: "arn:aws:iam::123456789012:role/frontend-irsa"
+        evidence: ["env:UPLOAD_QUEUE_URL"]
+      - workload: webapp/deployment/thumbnailer
+        serviceAccount: webapp/thumbnailer
+        identity: "arn:aws:iam::123456789012:role/thumbnailer-irsa"
+        evidence: ["env:QUEUE_URL"]
+    verify: "which role holds sqs:SendMessage vs sqs:ReceiveMessage on ingest-queue"
+    status: unverified            # unverified | confirmed | excluded
+    note: "frontend is internet-exposed; if thumbnailer receives from this queue it is payload-exposed"
+```
+
+Semantics:
+
+- **Candidates are not edges.** The consumer (trivy-plugin-vdr) MUST ignore them for
+  taint propagation. They are a verification work queue — surfaced as analysis
+  warnings, nothing more. An unverified candidate never taints anything, and never
+  prunes anything.
+- **`identity` is the principal to look up in the broker's access policy**, in the
+  form that policy actually uses:
+  - **GKE Workload Identity Federation** — the compiled principal built from the
+    *Kubernetes* ServiceAccount (not the `iam.gke.io/gcp-service-account`
+    annotation):
+    `principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/PROJECT_ID.svc.id.goog/subject/ns/<namespace>/sa/<ksa>`.
+    If the legacy annotation is present, record the linked GSA in `note` as well —
+    older grants may target the GSA instead of the federated principal.
+  - **EKS IRSA** — the role ARN from the KSA's `eks.amazonaws.com/role-arn`
+    annotation. EKS Pod Identity associations are not visible from inside the
+    cluster; when no IRSA annotation exists, record
+    `identity: "unknown (check EKS pod-identity associations for <ns>/<ksa>)"`.
+  - **AKS workload identity** — the client ID from the KSA's
+    `azure.workload.identity/client-id` annotation.
+- **Confirmed** (IAM shows one side can write and the other can read): the payload
+  edge is added to `edges` via `operator-edges.yaml` as **producer → consumer**
+  directly, with the broker named in the evidence string. Recording the edge this
+  way captures the *payload* direction taint propagation needs; the two TCP
+  connections (both outbound to the cloud) are irrelevant. Set the candidate's
+  `status: confirmed` so the review is auditable.
+- **Excluded** (IAM shows no producer/consumer pair): keep the candidate with
+  `status: excluded` and a note naming what was checked, so it stops resurfacing on
+  the next capture run.
+
 ## `operator-edges.yaml` (input to `--merge`)
 
 The agent-assisted review captures operator knowledge in this file; the script merges
@@ -182,6 +241,20 @@ resolveUnresolved:
   - host: api.vendor-saas.com    # ...or confirm it as external
     external: true
     note: "vendor SaaS, data leaves the cluster"
+brokerCandidates:                # passed through verbatim into the ConfigMap
+  - broker: sqs
+    resource: "https://sqs.us-east-1.amazonaws.com/123456789012/ingest-queue"
+    referencedBy:
+      - workload: webapp/deployment/frontend
+        serviceAccount: webapp/frontend
+        identity: "arn:aws:iam::123456789012:role/frontend-irsa"
+        evidence: ["env:UPLOAD_QUEUE_URL"]
+      - workload: webapp/deployment/thumbnailer
+        serviceAccount: webapp/thumbnailer
+        identity: "arn:aws:iam::123456789012:role/thumbnailer-irsa"
+        evidence: ["env:QUEUE_URL"]
+    verify: "which role holds sqs:SendMessage vs sqs:ReceiveMessage on ingest-queue"
+    status: unverified
 ```
 
 Plain YAML subset: block mappings/sequences, inline `{}`/`[]` flow values, quoted
@@ -198,3 +271,6 @@ available; the built-in fallback parser accepts exactly this subset).
 - `internetTransit` edges are internet-tainted regardless of upstream workload taint.
 - `operatorDeclared` edges and the attestation map onto the operator-declared
   evidence class; `unresolved` entries surface as analysis warnings.
+- `brokerCandidates` are ignored for taint propagation and pruning alike; they
+  surface as analysis warnings until verified. A confirmed candidate arrives as a
+  regular producer → consumer edge, not as a candidate.

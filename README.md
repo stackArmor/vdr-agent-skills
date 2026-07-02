@@ -17,7 +17,10 @@ works through evidence sources in stages — declared **NetworkPolicies**, then
 exports**, then declared **env / Secret / ConfigMap** connection analysis —
 evaluating after each stage whether the evidence collected is sufficient
 before descending to the next. It produces the `vdr-dataflow` ConfigMap plus
-per-namespace Mermaid dataflow diagrams for operator review.
+per-namespace Mermaid dataflow diagrams for operator review. The agent-assisted
+review also records **broker candidates** — possible payload paths through cloud
+brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes alone cannot confirm — each
+with the workload-identity principal to verify against IAM later.
 
 ### `generate-vdr-configmap` → the `vdr-fedramp` ConfigMap
 

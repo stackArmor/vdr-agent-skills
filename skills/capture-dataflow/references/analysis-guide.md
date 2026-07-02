@@ -43,7 +43,7 @@ Walk `exposedWorkloads` with the user:
   namespaces outside the scan scope. Re-run with a wider `--namespaces` if needed.
 - Confirm `publicHosts` are truly public DNS names (not split-horizon internal
   names). If a "public" host is actually internal-only, hairpin edges through it are
-  misclassified — note it and handle in section 4.
+  misclassified — note it and handle in section 6.
 
 ## 3. Zero-edge workloads (image-baked config)
 
@@ -75,7 +75,63 @@ For every entry in `unresolved`, triage with the user into exactly one bucket:
 Do not guess. If the user does not know a host, leave it unresolved — an unresolved
 entry in the final ConfigMap is honest and visible; a guessed edge is neither.
 
-## 5. Hairpin edges (`internetTransit: true`)
+## 5. Broker candidates (queues, buckets, topics)
+
+A dataflow through a cloud broker — SQS/SNS, S3, Pub/Sub, GCS, Service Bus, Event
+Hubs, managed Kafka — never shows up as a cluster edge: producer and consumer both
+dial *out* to a cloud endpoint, and the link between them lives in IAM, not in
+Kubernetes. Verifying IAM is out of scope here (it needs cloud APIs). Your job is to
+surface *candidates* precisely enough that they can be verified or excluded later.
+
+1. **Spot broker references.** Scan `unresolved` entries, `external`-confirmed
+   hosts, and env var names (especially on zero-edge workloads from section 3) for
+   broker shapes: `sqs.<region>.amazonaws.com` queue URLs, S3 bucket hosts,
+   `pubsub.googleapis.com` plus topic env vars, `storage.googleapis.com`,
+   `*.servicebus.windows.net`, `*.blob.core.windows.net`, Kafka bootstrap strings
+   pointing outside the cluster, and names like `*_QUEUE_URL`, `*_BUCKET`,
+   `*_TOPIC`.
+2. **Group by resource.** Extract the concrete resource (queue URL, bucket name,
+   topic) and group the workloads referencing it. Two or more referrers is a
+   candidate. A *single* referrer still is one when the other side may sit outside
+   the cluster — users uploading to a bucket via presigned URLs, a lambda producer,
+   another cluster. Flag candidates prominently when any referrer appears in
+   `exposedWorkloads`: that is the internet-tainted-producer shape.
+3. **Compile the identity.** For each referring workload, find its ServiceAccount
+   (`kubectl get deploy/... -o yaml` → `spec.serviceAccountName`, then
+   `kubectl get sa <name> -o yaml` — read-only, allowed) and record the principal
+   the broker's access policy would name:
+   - **GKE Workload Identity Federation:** compile
+     `principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/PROJECT_ID.svc.id.goog/subject/ns/<namespace>/sa/<ksa>`
+     from the *Kubernetes* ServiceAccount. `PROJECT_ID` can usually be read off a
+     GKE context name (`gke_<project-id>_<location>_<cluster>`); ask the user for
+     `PROJECT_NUMBER` — it is not visible from inside the cluster. If the legacy
+     `iam.gke.io/gcp-service-account` annotation is present, note the linked GSA
+     too: older grants may target the GSA rather than the federated principal.
+   - **EKS:** the role ARN from the KSA's `eks.amazonaws.com/role-arn` annotation
+     (IRSA). No annotation may mean EKS Pod Identity, whose associations are not
+     visible in-cluster — record `identity: "unknown (check EKS pod-identity
+     associations for <ns>/<ksa>)"`.
+   - **AKS:** the client ID from `azure.workload.identity/client-id`.
+4. **Record the candidate** in `operator-edges.yaml` under `brokerCandidates`
+   (format: `references/configmap-schema.md`), with `verify` phrased as the exact
+   IAM question — e.g. "which role holds `sqs:SendMessage` vs `sqs:ReceiveMessage`
+   on ingest-queue", "who holds `s3:PutObject` vs `s3:GetObject` on
+   uploads-bucket", "`roles/pubsub.publisher` vs `roles/pubsub.subscriber` on
+   topic ingest".
+5. **Ask the user** whether they can verify now, out-of-band. If IAM confirms a
+   producer/consumer pair, add the payload edge to `edges` as **producer →
+   consumer** (broker named in the evidence, e.g. `"operator: thumbnailer receives
+   from ingest-queue written by frontend; IAM verified 2026-07-02"`) and set the
+   candidate `status: confirmed`. If IAM rules it out, set `status: excluded` with
+   a note naming what was checked. If they cannot verify yet, leave `unverified` —
+   the ConfigMap carries it forward honestly.
+
+Never treat an unverified candidate as an edge in either direction: it must not
+taint anything and must not justify pruning anything. And keep the payload direction
+straight when confirming — the workload that *reads* from the broker is the one
+receiving the data, even though it initiated the connection.
+
+## 6. Hairpin edges (`internetTransit: true`)
 
 Configured URLs that point at the cluster's own public hostname resolve to the
 routed backend(s) and are marked `internetTransit`. Review them because:
@@ -92,16 +148,16 @@ routed backend(s) and are marked `internetTransit`. Review them because:
   `internetTransit: true` unless the user demonstrates the name is internal-only
   (then it belongs in section 2's misclassification handling).
 
-## 6. Scope sanity
+## 7. Scope sanity
 
 - Cross-namespace edges pointing into namespaces you did not scan mean the map has a
   blind side; recommend widening `--namespaces`.
 - If the user runs namespace-scoped scans for RBAC reasons, note in the attestation
   that completeness is claimed only for the scanned scope.
 
-## 7. Attestation
+## 8. Attestation
 
-Ask the user explicitly, after sections 2-6 are resolved:
+Ask the user explicitly, after sections 2-7 are resolved:
 
 > "Can you attest that every inter-workload payload path in <scope> is now
 > represented in this map (declaredTopologyComplete: true)? If not, that is fine —
@@ -112,7 +168,7 @@ Record their answer, name, and date in the `attestation` block of
 `true` — a false completeness claim creates false NIRV negatives downstream, which
 is the exact failure mode this tooling exists to prevent.
 
-## 8. Finalize and iterate
+## 9. Finalize and iterate
 
 1. Write `operator-edges.yaml` (format: `references/configmap-schema.md`).
 2. Re-run with `--merge operator-edges.yaml --emit all`.

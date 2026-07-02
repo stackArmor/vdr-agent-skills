@@ -43,7 +43,7 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 GENERATOR = f"capture-dataflow/{VERSION} (trivy-plugin-vdr-skills)"
 SCHEMA_VERSION = "v1alpha1"
 CONFIGMAP_NAME = "vdr-dataflow"
@@ -538,6 +538,7 @@ class Capture:
         self.exposed = {}       # (ns,kind,name) -> {"via": set, "publicHosts": set}
         self.public_host_map = {}   # host -> [{"namespace","service","port","internal"}]
         self.unresolved = {}    # host -> {"usedBy": set, "note": str|None}
+        self.broker_candidates = []  # merged verbatim from operator-edges.yaml
         self.stages = []        # stage records
         self.notes = []
 
@@ -1355,9 +1356,35 @@ def apply_merge(cap, merge_path, attestation):
             del cap.unresolved[host]
             resolved += 1
 
+    candidates = 0
+    for c in doc.get("brokerCandidates") or []:
+        if not isinstance(c, dict) or not (c.get("broker") and c.get("resource")):
+            log(f"  ! merge: skipping malformed brokerCandidates entry: {c}")
+            continue
+        entry = {"broker": str(c["broker"]), "resource": str(c["resource"]),
+                 "referencedBy": [], "status": str(c.get("status", "unverified"))}
+        for ref in c.get("referencedBy") or []:
+            if not isinstance(ref, dict) or not ref.get("workload"):
+                log(f"  ! merge: skipping malformed brokerCandidates referencedBy entry: {ref}")
+                continue
+            r = {"workload": str(ref["workload"])}
+            for k in ("serviceAccount", "identity"):
+                if ref.get(k):
+                    r[k] = str(ref[k])
+            ev = [str(x) for x in (ref.get("evidence") or [])][:8]
+            if ev:
+                r["evidence"] = ev
+            entry["referencedBy"].append(r)
+        for k in ("verify", "note"):
+            if c.get(k):
+                entry[k] = str(c[k])
+        cap.broker_candidates.append(entry)
+        candidates += 1
+
     verdict = "complete" if attestation.get("declaredTopologyComplete") else "partial"
     cap.record_stage(5, "operatorDeclared", count,
                      f"{count} operator edges merged; {resolved} unresolved hosts resolved; "
+                     f"{candidates} broker candidates recorded; "
                      f"declaredTopologyComplete={bool(attestation.get('declaredTopologyComplete'))}",
                      verdict)
 
@@ -1417,6 +1444,7 @@ def build_dataflow_doc(cap, attestation, generated):
         "exposedWorkloads": exposed_workloads_list(cap),
         "edges": edges,
         "unresolved": unresolved,
+        "brokerCandidates": list(cap.broker_candidates),
     }
 
 

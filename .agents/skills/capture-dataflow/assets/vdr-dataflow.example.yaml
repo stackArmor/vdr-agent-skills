@@ -12,7 +12,7 @@ data:
   dataflow.yaml: |
     schemaVersion: v1alpha1
     generated: "2026-07-01T18:24:09Z"
-    generator: "capture-dataflow/0.1.0 (trivy-plugin-vdr-skills)"
+    generator: "capture-dataflow/0.2.0 (trivy-plugin-vdr-skills)"
     sources:
       - type: networkPolicy
         verdict: absent
@@ -25,7 +25,7 @@ data:
         coverage: "7/9 workloads with >=1 declared edge; 1 unresolved hosts"
       - type: operatorDeclared
         verdict: complete
-        coverage: "2 operator edges merged; 1 unresolved hosts resolved; declaredTopologyComplete=True"
+        coverage: "2 operator edges merged; 1 unresolved hosts resolved; 1 broker candidates recorded; declaredTopologyComplete=True"
     attestation:
       declaredTopologyComplete: true
       attestedBy: "platform-ops@agency.example.gov"
@@ -172,3 +172,20 @@ data:
         usedBy:
           - webapp/deployment/notifications
         note: "vendor SaaS, data leaves the cluster"
+    brokerCandidates:
+      - broker: pubsub
+        resource: "projects/agency-prod/topics/ingest"
+        referencedBy:
+          - workload: webapp/deployment/frontend
+            serviceAccount: webapp/frontend
+            identity: "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/agency-prod.svc.id.goog/subject/ns/webapp/sa/frontend"
+            evidence:
+              - "env:INGEST_TOPIC"
+          - workload: webapp/deployment/thumbnailer
+            serviceAccount: webapp/thumbnailer
+            identity: "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/agency-prod.svc.id.goog/subject/ns/webapp/sa/thumbnailer"
+            evidence:
+              - "env:INGEST_SUBSCRIPTION"
+        status: unverified
+        verify: "which principal holds roles/pubsub.publisher vs roles/pubsub.subscriber on topic ingest"
+        note: "frontend is internet-exposed; if thumbnailer subscribes it is payload-exposed"

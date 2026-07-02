@@ -24,3 +24,20 @@ resolveUnresolved:
   - host: api.vendor-saas.example.com
     external: true
     note: "vendor SaaS, data leaves the cluster"
+brokerCandidates:
+  # possible payload path through a cloud broker; passed through verbatim so it
+  # can be verified against IAM later (analysis-guide.md section 5)
+  - broker: pubsub
+    resource: "projects/agency-prod/topics/ingest"
+    referencedBy:
+      - workload: webapp/deployment/frontend
+        serviceAccount: webapp/frontend
+        identity: "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/agency-prod.svc.id.goog/subject/ns/webapp/sa/frontend"
+        evidence: ["env:INGEST_TOPIC"]
+      - workload: webapp/deployment/thumbnailer
+        serviceAccount: webapp/thumbnailer
+        identity: "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/agency-prod.svc.id.goog/subject/ns/webapp/sa/thumbnailer"
+        evidence: ["env:INGEST_SUBSCRIPTION"]
+    verify: "which principal holds roles/pubsub.publisher vs roles/pubsub.subscriber on topic ingest"
+    status: unverified
+    note: "frontend is internet-exposed; if thumbnailer subscribes it is payload-exposed"

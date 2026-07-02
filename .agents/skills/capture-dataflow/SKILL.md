@@ -1,7 +1,7 @@
 ---
 name: Capture Dataflow
 description: Use when a FedRAMP Kubernetes operator needs the vdr-dataflow ConfigMap for trivy-plugin-vdr — captures the cluster's dataflow/taint graph (internet-exposed workloads, workload-to-service edges, hairpin/internet-transit paths) via staged read-only kubectl analysis, plus per-namespace Mermaid diagrams for human review. Read-only; the operator applies the resulting ConfigMap themselves.
-version: 0.1.0
+version: 0.2.0
 ---
 
 # Capture Dataflow
@@ -39,8 +39,10 @@ for the rest. Read `vdr-dataflow-output/bundle.json`.
 ### 3. Agentic analysis (required)
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/references/analysis-guide.md`
 **section by section**: stage-verdict interpretation, exposure review, zero-edge
-workloads (ask the user targeted questions), unresolved-host triage, hairpin
-review, then the attestation question. Capture the answers in
+workloads (ask the user targeted questions), unresolved-host triage,
+broker-candidate identification (SQS/S3/Pub/Sub/GCS links pending IAM
+verification, with the workload-identity principal to check), hairpin review,
+then the attestation question. Capture the answers in
 `operator-edges.yaml` (format in
 `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/references/configmap-schema.md`;
 example in `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/assets/operator-edges.example.yaml`).
