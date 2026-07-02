@@ -37,8 +37,9 @@ and justify any change.
 | `change-record`       | control | M  | M  | M  | ITSM/ticketing (record only) |
 | `platform-foundation` | control | L  | H  | H  | DNS, NTP, service discovery, plain L4 internal LBs (metadata only) |
 | `data-sensitive`      | data    | H  | H  | H  | PII/CUI datastores |
-| `data-backbone`       | data    | H  | H  | H  | queues, brokers, the system-of-record DB |
-| `app-tier`            | data    | M  | M  | H  | stateless services, APIs, UIs, caches |
+| `data-backbone`       | data    | H  | H  | H  | payload queues and brokers, the system-of-record DB |
+| `telemetry-backbone`  | data    | M  | M  | M  | metrics/trace pipelines, telemetry queues, event buses carrying no agency payload |
+| `app-tier`            | data    | M  | M  | M  | stateless services, APIs, UIs, caches |
 | `batch-analytics`     | data    | M  | M  | L  | ETL, reporting, analytics jobs |
 | `public-edge`         | data    | L  | L  | H  | load balancers, public web, ingress controllers |
 | `internal-tooling`    | data    | L  | L  | L  | dashboards, metrics/log agents |
@@ -74,6 +75,16 @@ operator** — the answer is an attestation, not a guess.
   (DNS/NTP/discovery/plain L4 LBs): CR is Low because compromise yields
   reconnaissance, not payload. Anything that terminates TLS or sees request
   payload belongs in `app-tier` or `public-edge` instead.
+- `data-backbone` vs `telemetry-backbone`: the discriminator is **whether the
+  bus carries agency payload data**. Metrics, traces, and heartbeats are
+  `telemetry-backbone` (M/M/M); anything moving customer/agency payloads is
+  `data-backbone` (H/H/H). Payload data routed through a telemetry bus is a
+  misclassification finding — reclassify the bus, don't leave it at Medium.
+- `public-edge` keeps AR High while `app-tier` is Medium: a CVE-grade DoS
+  hits **every replica at once** (redundancy defends against hardware
+  failure, not a flaw shared by the class), and an edge-class outage closes
+  the front door for every user, while an app-tier outage degrades one
+  service.
 - `public-edge` has CR/IR Low because it forwards traffic it does not own;
   its job is availability (AR High). An edge that also performs
   authentication belongs in `identity-secrets` territory — ask.
