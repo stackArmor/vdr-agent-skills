@@ -92,6 +92,10 @@ classification rule. For each workload **without** an existing
   store is `app-tier` as a cache, `identity-secrets` as a session/token store,
   `data-backbone` as a job broker. When the role is ambiguous from images and
   names alone, ask rather than assume.
+- For IAM roles and service accounts, classify by privilege:
+  `privileged-identity` for IAM mutation, deployment, impersonation, or broad
+  administration; `scoped-identity` for one-workload/service access. Do not use
+  `identity-secrets` merely because the resource is an identity.
 
 Walk the user through the proposals in batches (grouped by namespace works
 well): show workload, proposed archetype, one-line rationale; capture
