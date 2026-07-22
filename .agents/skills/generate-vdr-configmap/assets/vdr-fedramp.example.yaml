@@ -1,18 +1,5 @@
-# Example output of the generate-vdr-configmap skill for a fictional
-# FedRAMP Moderate (Class C), single-agency GKE estate.
-#
-# trivy-plugin-vdr reads fedramp-vdr-trivy/vdr-fedramp from the cluster
-# automatically. The embedded scoring.yaml is deep-merged over the plugin's
-# built-in rubric, which already carries the full archetype catalog, the
-# algorithm, the EPSS LEV threshold, and the H/H/H "unclassified" fail-safe —
-# so this file only carries the cluster-wide Class/scope and the rules for
-# cloud-managed components that cannot carry vdr.fedramp.io/* labels.
-# Customer-controlled workloads are labeled directly instead (see the
-# label-commands.sh emitted alongside this file).
-#
-# Review, then apply with:
-#   kubectl apply -f vdr-fedramp.yaml
-# or commit to the GitOps repo that owns cluster configuration.
+# Fictional example for a FedRAMP Moderate, single-agency Kubernetes estate.
+# The compositional strings are exact decision traces compiled to CR/IR/AR.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -24,42 +11,80 @@ metadata:
   name: vdr-fedramp
   namespace: fedramp-vdr-trivy
 data:
-  # Attested 2026-07-01 by the ISSO: FedRAMP Moderate authorization -> Class C.
   class: "C"
-  # Single-agency deployment. The shared reporting namespace is the one
-  # exception; it carries the vdr.fedramp.io/multi-agency=true namespace label
-  # (most-specific wins), so the cluster default stays "false".
   multiAgency: "false"
 
-  # The "web" IngressClass is fronted by an external HTTPS load balancer
-  # provisioned in Terraform (standalone NEG), so reachability cannot be
-  # inferred from cluster state. Every Ingress using this class is treated as
-  # internet-reachable.
-  internetAccessibleIngressClasses: |
-    - web
-
   scoring.yaml: |
-    # First match wins. nameRules win over namespaceRules. namespace is an
-    # optional glob on the workload namespace; match is a glob on the name.
-    nameRules:
-      # GCP workload-identity broker: privileged because it can mint or forward
-      # credentials, not because a service account is itself a secret.
-      - {namespace: kube-system, match: gke-metadata-server, archetype: privileged-identity}
-      # Cluster networking dataplane / API control tunnel / storage CSI.
-      - {namespace: kube-system, match: kube-proxy, archetype: orchestrator}
-      - {namespace: kube-system, match: netd, archetype: orchestrator}
-      - {namespace: kube-system, match: "konnectivity*", archetype: orchestrator}
-      - {namespace: kube-system, match: "pdcsi*", archetype: orchestrator}
-      # Cluster DNS: metadata-only foundation service (CR:L, IR:H, AR:H).
-      - {namespace: kube-system, match: "kube-dns*", archetype: platform-foundation}
-      # Provider terminates TLS before this default backend; the pod is passthrough.
-      - {namespace: kube-system, match: l7-default-backend, archetype: passthrough-edge}
+    archetypes:
+      # Canonical coverage entries for all 27 vectors.
+      "public-content.advisory-output.deferrable-work":
+        {lens: composite, cr: L, ir: L, ar: L}
+      "public-content.advisory-output.bounded-service":
+        {lens: composite, cr: L, ir: L, ar: M}
+      "public-content.advisory-output.shared-critical-path":
+        {lens: composite, cr: L, ir: L, ar: H}
+      "public-content.bounded-processing.deferrable-work":
+        {lens: composite, cr: L, ir: M, ar: L}
+      "public-content.bounded-processing.bounded-service":
+        {lens: composite, cr: L, ir: M, ar: M}
+      "public-content.bounded-processing.shared-critical-path":
+        {lens: composite, cr: L, ir: M, ar: H}
+      "public-content.authoritative-record.deferrable-work":
+        {lens: composite, cr: L, ir: H, ar: L}
+      "public-content.authoritative-record.bounded-service":
+        {lens: composite, cr: L, ir: H, ar: M}
+      "public-content.authoritative-record.shared-critical-path":
+        {lens: composite, cr: L, ir: H, ar: H}
+      "service-content.advisory-output.deferrable-work":
+        {lens: composite, cr: M, ir: L, ar: L}
+      "service-content.advisory-output.bounded-service":
+        {lens: composite, cr: M, ir: L, ar: M}
+      "service-content.advisory-output.shared-critical-path":
+        {lens: composite, cr: M, ir: L, ar: H}
+      "service-content.bounded-processing.deferrable-work":
+        {lens: composite, cr: M, ir: M, ar: L}
+      "service-content.bounded-processing.bounded-service":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "service-content.bounded-processing.shared-critical-path":
+        {lens: composite, cr: M, ir: M, ar: H}
+      "service-content.authoritative-record.deferrable-work":
+        {lens: composite, cr: M, ir: H, ar: L}
+      "service-content.authoritative-record.bounded-service":
+        {lens: composite, cr: M, ir: H, ar: M}
+      "service-content.authoritative-record.shared-critical-path":
+        {lens: composite, cr: M, ir: H, ar: H}
+      "regulated-data.advisory-output.deferrable-work":
+        {lens: composite, cr: H, ir: L, ar: L}
+      "regulated-data.advisory-output.bounded-service":
+        {lens: composite, cr: H, ir: L, ar: M}
+      "regulated-data.advisory-output.shared-critical-path":
+        {lens: composite, cr: H, ir: L, ar: H}
+      "regulated-data.bounded-processing.deferrable-work":
+        {lens: composite, cr: H, ir: M, ar: L}
+      "regulated-data.bounded-processing.bounded-service":
+        {lens: composite, cr: H, ir: M, ar: M}
+      "regulated-data.bounded-processing.shared-critical-path":
+        {lens: composite, cr: H, ir: M, ar: H}
+      "regulated-data.authoritative-record.deferrable-work":
+        {lens: composite, cr: H, ir: H, ar: L}
+      "regulated-data.authoritative-record.bounded-service":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "regulated-data.authoritative-record.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
 
-    namespaceRules:
-      # Managed Prometheus (observability only).
-      - {match: gmp-system, archetype: internal-tooling}
-      - {match: gmp-public, archetype: internal-tooling}
-      - {match: "gke-managed-*", archetype: internal-tooling}
-      # Everything else in kube-system (metrics agents, autoscalers, event
-      # exporter, ...) is low-privilege node/observability infrastructure.
-      - {match: kube-system, archetype: internal-tooling}
+      # Role-specific aliases used by the rules below.
+      "routing-metadata.foundation-control.shared-critical-path":
+        {lens: composite, cr: L, ir: H, ar: H}
+      "privileged-access.foundation-control.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "privileged-access.foundation-control.recovery-critical":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "ops-metadata.record-keeping.operations-support":
+        {lens: composite, cr: M, ir: M, ar: M}
+
+    # Narrow managed-component rules. Unknown future components stay fail-safe.
+    nameRules:
+      - {namespace: kube-system, match: cluster-dns, archetype: routing-metadata.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: node-network-agent, archetype: privileged-access.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: "persistent-disk-node*", archetype: privileged-access.foundation-control.recovery-critical}
+      - {namespace: monitoring-system, match: "metrics-agent*", archetype: ops-metadata.record-keeping.operations-support}
