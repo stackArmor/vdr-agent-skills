@@ -5,14 +5,14 @@
     "url": "https://github.com/stackArmor"
   },
   "metadata": {
-    "description": "Agent skills that generate the operator-attested ConfigMaps consumed by trivy-plugin-vdr for FedRAMP VDR/VER: cluster dataflow capture and compositional CR/IR/AR decision-trace attestations."
+    "description": "Agent skills for trivy-plugin-vdr FedRAMP VDR/VER metadata: cluster dataflow, compositional CR/IR/AR attestations, and selective CIS-mapped Terraform asset tagging."
   },
   "plugins": [
     {
       "name": "trivy-plugin-vdr-skills",
       "source": ".",
-      "description": "Two skills for FedRAMP VDR/VER evidence generation with trivy-plugin-vdr: capture-dataflow analyzes NetworkPolicies, service-mesh authorization resources, optional Hubble/mesh flow exports, and workload env/Secret/ConfigMap declarations to produce the vdr-dataflow ConfigMap and diagrams; generate-vdr-configmap interviews the operator for Certification Class, agency scope, and compositional disclosure/change/dependency attestations, then produces the vdr-fedramp scoring ConfigMap. Artifacts stay local for operator review; the skills never modify the cluster.",
-      "version": "0.2.0",
+      "description": "Three skills for FedRAMP VDR/VER evidence with trivy-plugin-vdr: capture Kubernetes dataflow, generate the operator-attested vdr-fedramp ConfigMap, and selectively classify CIS Foundations-mapped Terraform cloud assets. Generated artifacts and HCL edits stay local for review; the skills never apply cluster or cloud changes.",
+      "version": "0.3.0",
       "author": {
         "name": "stackArmor",
         "url": "https://github.com/stackArmor"
@@ -26,6 +26,8 @@
         "vulnerability-management",
         "trivy",
         "kubernetes",
+        "terraform",
+        "cis",
         "internet-reachability",
         "dataflow",
         "configmap"

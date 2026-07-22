@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tag Terraform VDR Assets"
+  short_description: "Classify and tag CIS-mapped Terraform assets"
+  default_prompt: "Use $tag-terraform-vdr-assets to classify and tag only CIS-benchmark-mapped Terraform assets for VDR PAIN scoring."

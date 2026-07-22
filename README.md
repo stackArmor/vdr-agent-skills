@@ -1,11 +1,11 @@
 # trivy-plugin-vdr-skills
 
-Agent skills that generate the operator-attested ConfigMaps consumed by
-[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) for FedRAMP
-VDR/VER scoring. The skills interview the operator, read the cluster with
-read-only `kubectl`, and write the artifacts locally — **nothing is ever
-applied to the cluster by an agent**; the operator reviews and applies via
-`kubectl apply` or GitOps.
+Agent skills that capture operator-attested metadata for
+[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) FedRAMP
+VDR/VER scoring. The Kubernetes skills read clusters with read-only `kubectl`
+and write ConfigMaps locally. The Terraform skill selectively adds reviewable
+metadata to CIS Foundations-mapped cloud assets. **Nothing is ever applied to a
+cluster or cloud account by an agent.**
 
 ## The skills
 
@@ -34,6 +34,18 @@ the rationale in the label value. The skill proposes traces from a read-only
 workload and privilege inventory, then emits the `vdr-fedramp` ConfigMap plus
 suggested `kubectl label` commands only after operator confirmation.
 
+### `tag-terraform-vdr-assets` → selective Terraform metadata
+
+Inventories AWS, Azure, and GCP Terraform and allows only asset families
+addressed by the supplied CIS Foundations Benchmarks (for example projects or
+accounts, identities, VMs, databases, buckets, keys, logging, and network
+boundaries). It separately interviews the operator for compositional CR/IR/AR
+decision traces, then adds provider-valid tags or labels only where the pinned
+provider or module supports them. Untaggable IAM and control resources are
+reported as coverage gaps instead of receiving invalid Terraform arguments.
+GCP projects and AWS accounts can optionally carry confirmed Certification
+Class and multi-agency defaults.
+
 ## Installation
 
 ### Claude Code
@@ -57,13 +69,17 @@ discovery path differs.
 
 | Tool | Notes |
 |------|-------|
-| `kubectl` (authenticated) | Must point at the target cluster. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `kubectl` (authenticated) | For the Kubernetes skills. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
 | `python3` (>= 3.8) | For the inventory/capture scripts. Standard library only — no `pip install`. |
 
 ## Security posture
 
 - **Read-only verbs only.** The skills and their scripts run `kubectl get` /
   `list` exclusively — never `exec`, `apply`, `label`, `patch`, or `delete`.
+- **No Terraform deployment.** The Terraform skill never reads state or plan
+  files and never runs `terraform apply`; it edits only operator-approved HCL
+  and validates the resulting diff.
 - **Secret values never leave the cluster.** Where Secret-declared
   connections are analyzed, values are reduced to `host:port` endpoints in
   all outputs; credentials are never written to any artifact.
