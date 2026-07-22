@@ -27,11 +27,12 @@ with the workload-identity principal to verify against IAM later.
 Interviews the operator to capture the scoring attestations: the FedRAMP
 **Certification Class** (mapped from the existing authorization level: Ready →
 A, Low → B, Moderate → C, High → D), the **agency scope**
-(single/multi-agency), and per-workload **asset-archetype** attestations
-proposed from a read-only workload inventory and confirmed interactively. It
-produces the `vdr-fedramp` ConfigMap (Class, scope, name/namespace rules for
-cloud-managed components) plus suggested `kubectl label` commands for the
-workloads the operator controls.
+(single/multi-agency), and per-workload compositional decision traces. Each
+trace has one independently mapped reason for disclosure, trusted change, and
+dependency/outage, producing a deterministic CR/IR/AR vector while preserving
+the rationale in the label value. The skill proposes traces from a read-only
+workload and privilege inventory, then emits the `vdr-fedramp` ConfigMap plus
+suggested `kubectl label` commands only after operator confirmation.
 
 ## Installation
 
@@ -70,8 +71,10 @@ discovery path differs.
   manifest and label command is written to a local output directory for
   review; applying is an explicit operator action (`kubectl apply -f` or a
   GitOps commit).
-- Attestations (Class, scope, archetypes) are explicit operator decisions
-  captured by the interview — the skills propose, the operator confirms.
+- Attestations (Class, scope, environment intent, and decision traces) are
+  explicit operator decisions captured by the interview — the skills propose,
+  the operator confirms. HA is recorded as mitigation evidence and never used
+  to lower the Availability Requirement.
 
 ## How the ConfigMaps are consumed
 

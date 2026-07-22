@@ -1,167 +1,228 @@
 ---
-name: Generate VDR ConfigMap
-description: Use when the user wants to create or update the vdr-fedramp scoring ConfigMap for trivy-plugin-vdr — interviews the operator (FedRAMP Certification Class, agency scope, asset-archetype attestations), inventories cluster workloads read-only, and writes the ConfigMap YAML plus suggested label commands locally. Never applies anything to the cluster.
-version: 0.1.0
+name: generate-vdr-configmap
+description: Generate or update the trivy-plugin-vdr vdr-fedramp scoring ConfigMap from explicit FedRAMP Class, agency-scope, and compositional CR/IR/AR decision-trace attestations; inventory Kubernetes workloads read-only, compile exact dotted reason codes into the scoring catalog, and emit local review-only label commands without applying anything.
 ---
 
 # Generate VDR ConfigMap
 
-Interview the operator and produce the `vdr-fedramp` ConfigMap (namespace
-`fedramp-vdr-trivy`) that [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr)
-reads for PAIN scoring: the Certification Class, the agency scope, and the
-name/namespace archetype rules for components that cannot carry labels. Also
-produce suggested `kubectl label` commands for the archetype attestations the
-operator confirms.
+Interview the operator, inspect the selected Kubernetes cluster read-only, and
+write the governed scoring artifacts consumed by `trivy-plugin-vdr`.
+In commands below, resolve `<skill-dir>` to the directory containing this file.
 
 ## Ground rules
 
-- **Read-only.** Only `kubectl get`/`kubectl config` are ever run (via the
-  inventory script or directly). Never `exec`, `apply`, `label`, `patch`,
-  `edit`, or `delete` — not even if the user asks; instead point them at the
-  generated artifacts to review and apply themselves.
-- **Artifacts stay local.** Everything is written to `./vdr-configmap-output/`.
-  The operator applies it manually (`kubectl apply -f`) or through GitOps.
-- **Attestations are decisions, not guesses.** Every Class, scope, and
-  archetype value in the output must have been explicitly confirmed by the
-  user. Propose; never silently assume.
+- Run only `kubectl config` and `kubectl get`. Never run `exec`, `apply`,
+  `label`, `patch`, `edit`, or `delete`.
+- Write only under `./vdr-configmap-output/`. The operator reviews and applies
+  the output manually or through GitOps.
+- Treat Class, agency scope, environment intent, and every assigned decision
+  trace as operator attestations. Propose values; never silently assume them.
+- For a fresh evaluation, do not read or use the existing `vdr-fedramp`
+  ConfigMap. Existing labels may be reported but must be reconfirmed.
+- Never retrieve Secret resources or values. Reference names visible in
+  workload specs are sufficient evidence; never reproduce credential material.
+
+## Decision-trace schema
+
+Use one Kubernetes label value with exactly three segments:
+
+```text
+<disclosure>.<trusted-change>.<dependency>
+```
+
+The segments independently determine CR, IR, and AR. Example:
+
+```text
+privileged-access.foundation-control.recovery-critical -> H/H/H
+```
+
+Read `references/archetype-guide.md` completely before classifying workloads.
+It defines the allowed reasons, the five-question interview, availability
+calibration, all 27 vector combinations, and classification examples.
+
+The current plugin treats the dotted string as an opaque archetype name; it
+does not parse the segments. Therefore every exact trace used by a label or
+rule must also appear under `scoring.yaml.archetypes` with its derived vector.
+Keep every value Kubernetes-label-safe and at most 63 characters.
 
 ## Workflow
 
-### 1. Confirm the kubectl context
+### 1. Confirm the target context
 
-Show `kubectl config current-context` and confirm with the user that this is
-the cluster to inventory. State the read-only guarantee up front: this skill
-only lists resources and never modifies the cluster.
+Run `kubectl config current-context`, show the value, and obtain explicit
+confirmation before inventory. State that cluster access remains read-only.
+Pass that exact reviewed name to every inventory query; never rely on a mutable
+current-context after confirmation.
 
-### 2. Confirm the Certification Class and agency scope (required — never skip)
+### 2. Confirm Class and agency scope
 
-The Certification Class selects the entire remediation-deadline column block,
-so it must be confirmed explicitly. Present this mapping so the operator can
-find themselves by their existing FedRAMP authorization level:
+Map the existing FedRAMP authorization to Certification Class:
 
-| Your FedRAMP authorization | Certification Class |
-|----------------------------|---------------------|
-| FedRAMP Ready              | **A**               |
-| FedRAMP Low                | **B**               |
-| FedRAMP Moderate           | **C**               |
-| FedRAMP High               | **D**               |
+| Authorization | Class |
+|---|---|
+| FedRAMP Ready | A |
+| FedRAMP Low | B |
+| FedRAMP Moderate | C |
+| FedRAMP High | D |
 
-Ask the user to confirm the Class explicitly. **Do not silently default** —
-if they are unsure, help them locate their authorization level on the
-[FedRAMP Marketplace](https://marketplace.fedramp.gov/) first.
+Require the operator to confirm the Class. Then confirm the cluster-wide
+`multiAgency` default:
 
-Then confirm the agency scope — `multiAgency: "true"` or `"false"`:
+- `true`: compromise can affect several agencies from this cluster.
+- `false`: single-agency deployment.
 
-- **true** — a multi-tenant platform serving several agencies from this
-  cluster (a compromise can affect more than one agency at once).
-- **false** — a single-agency deployment.
+Do not infer this flag from workload population. Namespace and workload
+`vdr.fedramp.io/multi-agency` labels remain available for exceptions.
 
-Explain that this is the cluster-wide default: hierarchical override labels
-(`vdr.fedramp.io/multi-agency` on a namespace or workload, most-specific wins)
-exist for exceptions, so a mostly-single-agency cluster with one shared
-namespace can stay `"false"` and label the exception.
+### 3. Inventory workloads and structural evidence
 
-### 3. Inventory the workloads
+Run:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/generate-vdr-configmap/scripts/list_workloads.py > workloads.json
+python3 <skill-dir>/scripts/list_workloads.py \
+  --context '<reviewed-context>'
 ```
 
-(Use `-n <namespace>` to restrict scope; default is all namespaces. Requires
-authenticated `kubectl` + `python3`, stdlib only.)
+Use `-n <namespace>` only when the user restricts scope. The script records
+images, service accounts, host privilege indicators, and referenced resource
+names without resolving their contents. It exits nonzero if any required query
+fails; never reinterpret a partial inventory as an empty resource class. It
+pins the reviewed context on every `kubectl get`, preventing a concurrent
+context switch from mixing clusters in one inventory.
 
-The JSON lists every workload (namespace, kind, name, existing
-`vdr.fedramp.io/*` labels, container images), namespace-level
-`vdr.fedramp.io/class` / `vdr.fedramp.io/multi-agency` labels, and flags
-cloud-managed namespaces (`kube-system`, `gke-managed-*`, `gmp-*`,
-`amazon-cloudwatch`, `azure-*`, …) whose components cannot carry customer
-labels.
+Inventory standalone and custom-owned Kubernetes Jobs as independently
+scorable workloads. Suppress a Job whenever its controller owner is a CronJob;
+the plugin represents that repeated execution through the CronJob template.
+Keep Pods owned by custom controllers, but suppress Pods whose owner kind the
+plugin already inventories (`ReplicaSet`, `StatefulSet`, `DaemonSet`, or `Job`).
 
-### 4. Archetype attestation (interactive)
+When needed, collect more evidence with read-only `kubectl get` calls for:
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/generate-vdr-configmap/references/archetype-guide.md`
-— it contains the archetype catalog (CR/IR/AR values, typical members) and the
-classification rule. For each workload **without** an existing
-`vdr.fedramp.io/asset-archetype` label, propose one:
+- workload specifications and owner references;
+- Service, Ingress, and Gateway routing;
+- Roles, ClusterRoles, and their bindings;
+- validating or mutating webhooks;
+- PVC references and node selectors.
 
-- **Control-plane lens first**: if the workload can deploy, orchestrate, hold
-  cross-estate credentials, or actuate configuration, classify it by that
-  control function regardless of the data it stores. Otherwise classify by the
-  data it holds.
-- The same software lands in different archetypes **by role**: an in-memory
-  store is `app-tier` as a cache, `identity-secrets` as a session/token store,
-  `data-backbone` as a job broker. When the role is ambiguous from images and
-  names alone, ask rather than assume.
-- For IAM roles and service accounts, classify by privilege:
-  `privileged-identity` for IAM mutation, deployment, impersonation, or broad
-  administration; `scoped-identity` for one-workload/service access. Do not use
-  `identity-secrets` merely because the resource is an identity.
+Privilege evidence outweighs product naming. Strong signals include broad
+Secret access, service-account token creation, IAM/RBAC mutation, `pods/exec`,
+workload mutation, privileged mode, host PID/network, writable host mounts,
+runtime sockets, and powerful Linux capabilities.
 
-Walk the user through the proposals in batches (grouped by namespace works
-well): show workload, proposed archetype, one-line rationale; capture
-confirmations and corrections.
+A managed-namespace match is an ownership hint, not a decision. A
+customer-installed component in a system namespace should still receive a
+direct label. A provider-controlled component should use a ConfigMap rule.
 
-- **Customer-controlled workloads** the user confirms → become
-  `kubectl label` suggestions in `label-commands.sh` (step 5).
-- **Cloud-managed components** (flagged namespaces) cannot carry labels →
-  become `nameRules` / `namespaceRules` entries inside the ConfigMap instead
-  (first match wins; nameRules win over namespaceRules).
-- **Unconfirmed workloads stay unlabeled.** Tell the user this is intentional
-  and loud: the plugin's fail-safe classifies untagged assets as
-  `unclassified` (CR/IR/AR all High), so they score noisily (typically N4)
-  until someone classifies them. Do not invent a quieter default.
+### 4. Ask the impact questions
 
-### 5. Emit the artifacts
+Ask no more than five questions for an asset or a coherent workload group:
 
-Write two files to `./vdr-configmap-output/`:
+1. Should this environment use production-equivalent values, or is it an
+   intentionally isolated low-impact environment?
+2. What could disclosure expose?
+3. What trusted action, record, identity, or control could compromise alter?
+4. Who is affected by complete logical loss: CSP operators, a bounded user
+   subset, or all users?
+5. Ignoring replicas, failover, and other mitigations, is that outage limited,
+   serious, severe, or specifically recovery/protection critical?
 
-**(a) `vdr-fedramp.yaml`** — the Namespace + ConfigMap manifest (model it on
-`${CLAUDE_PLUGIN_ROOT}/skills/generate-vdr-configmap/assets/vdr-fedramp.example.yaml`):
+Environment names never establish impact. If the operator requires parity,
+classify nonproduction workloads by their intended production data and
+consequences even when current data is synthetic.
 
-- `class` and `multiAgency` scalars from step 2.
-- `scoring.yaml` with the `nameRules`/`namespaceRules` for cloud-managed and
-  otherwise unlabelable components from step 4, each rule commented with its
-  rationale.
-- `internetAccessibleIngressClasses` / `internetAccessibleGatewayClasses`
-  **only if** the user identifies Ingress/Gateway classes whose edge load
-  balancer is provisioned outside Kubernetes (ask once: "any ingress classes
-  fronted by a load balancer built outside the cluster, e.g. Terraform?").
-- Rubric overrides (catalog entries, EPSS threshold, `unclassified` default)
-  inside `scoring.yaml` **only if the user asks** for rubric changes — the
-  built-in rubric is complete without them. If asked about the PAIN **word
-  thresholds**: they are deliberately **not** ConfigMap-configurable; they
-  live in the governed `--scoring-config` file so calibration cannot be
-  changed by ad-hoc cluster edits. Say so and move on.
+HA never lowers AR. Evaluate the consequence of the workload class being
+logically unavailable across all replicas; record redundancy only as a
+mitigating control outside the requirement vector. Population informs outage
+consequence but is not an independent multiplier.
 
-**(b) `label-commands.sh`** — the suggested labels for confirmed attestations,
-headed by a comment block stating it is **FOR OPERATOR REVIEW AND EXECUTION —
-this skill never runs it**. One line per workload:
+### 5. Propose and confirm traces
+
+For each unlabeled workload, show:
+
+- workload or precise workload group;
+- exact three-part trace;
+- derived CR/IR/AR vector;
+- one-line evidence and any operator-dependent assumption;
+- confidence level.
+
+Group repetitive managed components by narrow, reviewable name pattern. Ask
+when payload type, cross-environment authority, or business consequence cannot
+be learned from cluster state. Unconfirmed workloads stay unlabeled and resolve
+to the `unclassified` H/H/H fail-safe.
+
+### 6. Compile the scoring catalog
+
+Validate confirmed traces and generate exact catalog entries with:
 
 ```bash
-kubectl label deployment/payments-api -n payments \
-  vdr.fedramp.io/asset-archetype=app-tier --overwrite
+python3 <skill-dir>/scripts/reason_codes.py \
+  --cover-27 <confirmed-trace>...
 ```
 
-Do not execute either artifact. Do not run `kubectl apply` or
-`kubectl label` under any circumstances.
+`--cover-27` adds a canonical trace only for vector combinations not already
+represented. Use it when the operator confirms that the policy should retain
+all 27 CR/IR/AR permutations. Coverage-only entries are policy capability, not
+asset assignments; do not assign them without a workload attestation.
 
-### 6. Hand off
+### 7. Emit the artifacts
 
-Tell the user:
+Write both files under `./vdr-configmap-output/`:
 
-- Review both files in `./vdr-configmap-output/`.
-- Apply the ConfigMap with `kubectl apply -f vdr-configmap-output/vdr-fedramp.yaml`,
-  or commit it to the GitOps repo (ArgoCD/Flux) that owns cluster config —
-  preferred, since the ConfigMap is governed security configuration.
-- Run `label-commands.sh` after review (or translate the labels into their
-  Helm charts / manifests so they survive redeploys).
-- Re-run this skill when the estate changes — new namespaces, new
-  cloud-managed components after a cluster upgrade, or a Class/scope change.
-  Anything left unclassified will keep scoring loudly until then.
+1. `vdr-fedramp.yaml`
+   - Namespace `fedramp-vdr-trivy` and ConfigMap `vdr-fedramp`.
+   - Quoted `class` and `multiAgency` strings.
+   - Exact custom `archetypes` entries and narrow `nameRules` for confirmed
+     provider-controlled components.
+   - Avoid blanket system-namespace fallbacks when privilege varies; unknown
+     future components should fail loud.
+2. `label-commands.sh`
+   - Begin with `FOR OPERATOR REVIEW AND EXECUTION` and state that the skill
+     never runs it.
+   - Emit one `kubectl label ... --overwrite` suggestion per confirmed
+     customer-controlled workload.
+   - Require a reviewed context value and pin every suggested mutation with
+     `--context`; a one-time context check alone has a race.
+   - Recommend moving labels into Helm or deployment manifests after review.
+     For CronJobs, put the trace in CronJob `metadata.labels` or
+     `spec.jobTemplate.spec.template.metadata.labels`; the plugin inventories
+     the CronJob and suppresses its generated Jobs. Do not rely on
+     `spec.jobTemplate.metadata.labels`, which the plugin does not score. Put
+     the label directly in one-shot and Helm-hook Job manifests as well.
 
-## Scope
+Ask once whether any Ingress/Gateway class is fronted by a load balancer built
+outside Kubernetes. Include `internetAccessibleIngressClasses` or
+`internetAccessibleGatewayClasses` only for classes the operator confirms.
+Omit the keys when there are none.
 
-This skill produces the **scoring** ConfigMap only (Class, scope, archetype
-rules). Internet-reachability evidence is the companion `capture-dataflow`
-skill, which produces the separate `vdr-dataflow` ConfigMap. Neither skill
-ever modifies the cluster.
+Do not put PAIN word thresholds in the ConfigMap. Those remain governed
+`--scoring-config` policy and are intentionally not cluster-overridable.
+
+If the user supplies a proprietary-term deny-list, scan reusable content and
+generated files case-insensitively. Parameterize a required namespace or
+workload identifier rather than leaking it or targeting a guessed resource.
+
+### 8. Validate without touching the cluster
+
+Before handoff:
+
+- parse the outer YAML and embedded `scoring.yaml`;
+- verify every trace has three registered reasons and matching H/M/L values;
+- verify all rule and label references are declared exactly;
+- verify all 27 vectors are represented when requested;
+- check rule globs, ordering, and duplicate/shadowed entries;
+- run `bash -n vdr-configmap-output/label-commands.sh`;
+- run the proprietary-term deny-list scan when applicable;
+- keep the `skills/` and `.agents/skills/` copies byte-identical.
+
+When a sibling `trivy-plugin-vdr` checkout is available, prefer an offline
+parser/smoke test against that implementation. Treat warnings about an invalid
+cluster scoring config as failures even when the command exits zero.
+
+Never execute either generated artifact.
+
+## Handoff
+
+Tell the operator to review both files, apply the ConfigMap manually or through
+the owning GitOps repository, and execute or translate the label suggestions
+only after review. Re-run the skill after estate, Class, scope, or policy
+changes; anything unclassified continues to score loudly.
