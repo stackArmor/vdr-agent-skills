@@ -30,9 +30,11 @@ A, Low → B, Moderate → C, High → D), the **agency scope**
 (single/multi-agency), and per-workload compositional decision traces. Each
 trace has one independently mapped reason for disclosure, trusted change, and
 dependency/outage, producing a deterministic CR/IR/AR vector while preserving
-the rationale in the label value. The skill proposes traces from a read-only
-workload and privilege inventory, then emits the `vdr-fedramp` ConfigMap plus
-suggested `kubectl label` commands only after operator confirmation.
+the rationale in the archetype value. The skill proposes traces from a
+read-only workload and privilege inventory, then emits a central
+`vdr-fedramp` ConfigMap rule for every confirmed workload plus a complete
+assignment-coverage ledger. Direct labels are optional operator-requested
+overrides, never the default output.
 
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 

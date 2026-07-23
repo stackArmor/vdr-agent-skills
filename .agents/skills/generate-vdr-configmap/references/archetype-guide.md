@@ -150,20 +150,24 @@ new mounts, rescheduling, failover, or restoration across stateful services.
 
 ### Ownership and managed components
 
-- Namespace is not ownership. Customer-installed add-ons in system namespaces
-  should receive direct workload labels.
-- Use narrow `nameRules` for provider-controlled workloads that cannot retain
-  customer labels.
+- Namespace is not ownership, and ownership does not select the assignment
+  mechanism. Put every confirmed workload in the central ConfigMap assignment
+  plan, including customer applications and third-party add-ons.
+- Prefer exact `nameRules`. Use a narrow stable pattern only when every current
+  match is a coherent confirmed group. Direct workload labels are optional
+  operator-requested overrides, not the default assignment mechanism.
 - Avoid broad namespace fallbacks where privilege varies. An unfamiliar future
   add-on should remain `unclassified` H/H/H until attested.
 - An inactive platform or OS-specific variant still needs an intended-role
   attestation. Do not lower it from replica count alone.
 - Inventory and attest standalone and custom-owned Jobs. Suppress Jobs whose
   controller owner is a CronJob, which represents the repeated execution.
-  Apply the durable trace in CronJob `metadata.labels` or
+  Assign the CronJob with a central rule. If the operator requests a direct
+  label override, put the durable trace in CronJob `metadata.labels` or
   `spec.jobTemplate.spec.template.metadata.labels`; do not use
-  `spec.jobTemplate.metadata.labels`, which the plugin does not score. Apply
-  the trace directly in one-shot or Helm-hook Job manifests.
+  `spec.jobTemplate.metadata.labels`, which the plugin does not score. Give
+  one-shot and Helm-hook Jobs explicit central rules; use a namespace- and
+  name-scoped `kindRule` when generated names defeat exact `nameRules`.
 - Node-owned static or mirror Pods can remain independently visible to the
   plugin even when they implement the same role as a managed node component.
   Cover them with a narrow, stable provider prefix rule rather than embedding
@@ -239,8 +243,8 @@ archetypes:
 ```
 
 Validate segment order, token membership, label length, and declared vector
-before emission. Every rule and suggested label must reference an exact catalog
-entry.
+before emission. Every rule and optional label override must reference an exact
+catalog entry.
 
 Resolution remains most-specific-first:
 

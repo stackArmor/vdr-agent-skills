@@ -82,7 +82,7 @@ data:
       "ops-metadata.record-keeping.operations-support":
         {lens: composite, cr: M, ir: M, ar: M}
 
-    # Narrow managed-component rules. Unknown future components stay fail-safe.
+    # Confirmed workload rules. Unknown future components stay fail-safe.
     nameRules:
       - {namespace: kube-system, match: cluster-dns, archetype: routing-metadata.foundation-control.shared-critical-path}
       - {namespace: kube-system, match: node-network-agent, archetype: privileged-access.foundation-control.shared-critical-path}

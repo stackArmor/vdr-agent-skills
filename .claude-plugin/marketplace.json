@@ -12,7 +12,7 @@
       "name": "trivy-plugin-vdr-skills",
       "source": ".",
       "description": "Three skills for FedRAMP VDR/VER evidence with trivy-plugin-vdr: capture Kubernetes dataflow, generate the operator-attested vdr-fedramp ConfigMap, and selectively classify CIS Foundations-mapped Terraform cloud assets. Generated artifacts and HCL edits stay local for review; the skills never apply cluster or cloud changes.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "stackArmor",
         "url": "https://github.com/stackArmor"

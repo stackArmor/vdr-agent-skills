@@ -24,7 +24,8 @@ import sys
 
 # Namespace patterns that often contain provider-managed or shared-responsibility
 # components. This is an ownership hint only: customer-installed components can
-# live in these namespaces and should receive direct workload labels.
+# live in these namespaces, and every confirmed workload still receives a
+# central ConfigMap assignment rule.
 CLOUD_MANAGED_NS_PATTERNS = [
     "kube-system",
     "kube-public",
