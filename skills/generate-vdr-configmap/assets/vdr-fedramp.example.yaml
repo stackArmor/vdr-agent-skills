@@ -11,7 +11,9 @@ metadata:
   name: vdr-fedramp
   namespace: fedramp-vdr-trivy
 data:
+  # confidence: high | operator-confirmed FedRAMP Moderate authorization
   class: "C"
+  # confidence: high | operator-confirmed single-agency deployment
   multiAgency: "false"
 
   scoring.yaml: |
@@ -84,7 +86,12 @@ data:
 
     # Confirmed workload rules. Unknown future components stay fail-safe.
     nameRules:
+      # confidence: high | cluster DNS role and shared dependency are structurally explicit
       - {namespace: kube-system, match: cluster-dns, archetype: routing-metadata.foundation-control.shared-critical-path}
+      # confidence: high | privileged node-network role establishes foundation authority
       - {namespace: kube-system, match: node-network-agent, archetype: privileged-access.foundation-control.shared-critical-path}
+      # confidence: high | privileged CSI node role is required for stateful recovery
       - {namespace: kube-system, match: "persistent-disk-node*", archetype: privileged-access.foundation-control.recovery-critical}
+      # confidence: medium | metrics-only content is inferred from the observed collector role
+      # manual-review: verify the collector cannot ingest logs, traces, payload fragments, or credentials
       - {namespace: monitoring-system, match: "metrics-agent*", archetype: ops-metadata.record-keeping.operations-support}

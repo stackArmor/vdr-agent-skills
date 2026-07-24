@@ -1,4 +1,4 @@
-# Compositional archetype attestation guide
+# Compositional archetype classification guide
 
 Use this guide to turn operator answers and read-only evidence into an auditable
 decision trace and deterministic CR/IR/AR vector.
@@ -10,9 +10,10 @@ decision trace and deterministic CR/IR/AR vector.
 3. [Five-question interview](#five-question-interview)
 4. [Availability calibration](#availability-calibration)
 5. [Classification rules](#classification-rules)
-6. [All 27 vectors](#all-27-vectors)
-7. [Reusable examples](#reusable-examples)
-8. [Runtime compilation and resolution](#runtime-compilation-and-resolution)
+6. [Confidence and review](#confidence-and-review)
+7. [All 27 vectors](#all-27-vectors)
+8. [Reusable examples](#reusable-examples)
+9. [Runtime compilation and resolution](#runtime-compilation-and-resolution)
 
 ## Model
 
@@ -79,12 +80,20 @@ Ask these questions for one workload or a coherent group:
 5. **Consequence:** Ignoring HA and failover, would that loss be limited,
    serious, severe, recovery-critical, or protection-critical?
 
-Class and `multiAgency` are separate required attestations. Population does not
-set `multiAgency`, and `multiAgency` does not select an archetype.
+Class and `multiAgency` are separate configuration decisions. Record operator
+attestations when provided and clearly mark provisional agent inferences when
+they are not. Population does not set `multiAgency`, and `multiAgency` does not
+select an archetype.
 
 An environment name is not evidence of low impact. When the operator chooses
 production equivalence, use production data types, authority, and outage
 consequences even if current test data is synthetic and isolated.
+
+When the operator delegates workload-level judgment or gives a range such as
+"potentially all, depending on workload," stop repeating broad questions. Use
+the inventory, routing, RBAC, and common workload role to select the strongest
+credible consequence for each dimension. Preserve uncertainty in confidence
+and manual-review notes instead of leaving the workload unassigned.
 
 ## Availability calibration
 
@@ -119,7 +128,29 @@ new mounts, rescheduling, failover, or restoration across stateful services.
 3. Select the strongest credible consequence separately for CR, IR, and AR.
 4. Join the three exact reasons with dots and mechanically derive the vector.
 5. Show the trace, vector, evidence, assumptions, and confidence to the
-   operator. Assign it only after explicit confirmation.
+   operator. Assign the best-supported trace even when confirmation is
+   unavailable; distinguish operator-confirmed from agent-inferred decisions.
+
+## Confidence and review
+
+Confidence measures evidence quality, not impact severity:
+
+| Confidence | Use when | Required output |
+|---|---|---|
+| High | The operator directly attests the assignment, or structural evidence unambiguously establishes the role and all three impact dimensions. | Record the evidence and an empty manual-review list. |
+| Medium | The role is well supported, but at least one impact dimension depends on a conventional inference about data, authority, population, or consequence. | State the assumption and a concrete verification action. |
+| Low | Evidence is sparse, conflicting, mostly name-based, or depends on infrastructure outside Kubernetes. | Choose the strongest credible consequence and prominently identify what could change it. |
+
+Do not convert uncertainty into a quieter vector. If both Medium and High
+consequences are credible, select High and describe the evidence needed to
+lower it. Do not assign `unclassified` merely because an operator did not
+answer; ordinary uncertainty produces a medium- or low-confidence inferred
+trace.
+
+In `vdr-fedramp.yaml`, put a confidence comment immediately above every
+assignment rule or coherent rule group. Put a manual-review comment beside
+every medium- or low-confidence rule. Mirror the same information structurally
+in `assignment-coverage.json` so terminal reporting is deterministic.
 
 ### Privilege and control
 
@@ -151,16 +182,16 @@ new mounts, rescheduling, failover, or restoration across stateful services.
 ### Ownership and managed components
 
 - Namespace is not ownership, and ownership does not select the assignment
-  mechanism. Put every confirmed workload in the central ConfigMap assignment
+  mechanism. Put every inventoried workload in the central ConfigMap assignment
   plan, including customer applications and third-party add-ons.
 - Prefer exact `nameRules`. Use a narrow stable pattern only when every current
-  match is a coherent confirmed group. Direct workload labels are optional
+  match is a coherent assigned group. Direct workload labels are optional
   operator-requested overrides, not the default assignment mechanism.
 - Avoid broad namespace fallbacks where privilege varies. An unfamiliar future
-  add-on should remain `unclassified` H/H/H until attested.
-- An inactive platform or OS-specific variant still needs an intended-role
-  attestation. Do not lower it from replica count alone.
-- Inventory and attest standalone and custom-owned Jobs. Suppress Jobs whose
+  add-on should remain `unclassified` H/H/H until classified.
+- Classify an inactive platform or OS-specific variant by its intended role.
+  Do not lower it from replica count alone.
+- Inventory and classify standalone and custom-owned Jobs. Suppress Jobs whose
   controller owner is a CronJob, which represents the repeated execution.
   Assign the CronJob with a central rule. If the operator requests a direct
   label override, put the durable trace in CronJob `metadata.labels` or
@@ -208,8 +239,8 @@ representatives, not automatic workload assignments:
 | H/H/M | `regulated-data.authoritative-record.bounded-service` |
 | H/H/H | `regulated-data.authoritative-record.shared-critical-path` |
 
-Run `scripts/reason_codes.py --cover-27 <confirmed-trace>...` to add only the
-canonical entries needed to fill gaps left by the confirmed workload traces.
+Run `scripts/reason_codes.py --cover-27 <assigned-trace>...` to add only the
+canonical entries needed to fill gaps left by the assigned workload traces.
 
 ## Reusable examples
 
@@ -228,8 +259,10 @@ canonical entries needed to fill gaps left by the confirmed workload traces.
 | Sensitive-data backup required for restoration | `regulated-data.authoritative-record.recovery-critical` | H/H/H |
 | Secret reconciler whose outage delays rotation | `root-secrets.identity-control.change-deferred` | H/H/M |
 
-These are patterns, not name-based defaults. Confirm the actual role and
-consequence for the target estate.
+These are patterns, not name-based defaults. Determine the actual role and
+consequence from target-estate evidence. When evidence remains incomplete,
+apply the closest defensible pattern with medium or low confidence and report
+the needed review.
 
 ## Runtime compilation and resolution
 

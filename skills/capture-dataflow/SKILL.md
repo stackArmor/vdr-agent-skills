@@ -1,10 +1,13 @@
 ---
-name: Capture Dataflow
-description: Use when a FedRAMP Kubernetes operator needs the vdr-dataflow ConfigMap for trivy-plugin-vdr — captures the cluster's dataflow/taint graph (internet-exposed workloads, workload-to-service edges, hairpin/internet-transit paths) via staged read-only kubectl analysis, plus per-namespace Mermaid diagrams for human review. Read-only; the operator applies the resulting ConfigMap themselves.
-version: 0.2.0
+name: capture-dataflow
+description: Beta and potentially deprecated analysis aid for understanding data flows and interrelationships in Kubernetes environments. Use when an operator needs a read-only workload/service dataflow graph, internet-exposure and transit evidence, per-namespace Mermaid diagrams, or the experimental trivy-plugin-vdr vdr-dataflow ConfigMap; the operator reviews and applies any artifact.
 ---
 
 # Capture Dataflow
+
+> **Beta:** This skill may be deprecated. Use it as an experimental aid for
+> understanding Kubernetes data flows and interrelationships; do not treat its
+> schema or generated artifacts as a stable long-term interface.
 
 Produce the `vdr-dataflow` ConfigMap (namespace `fedramp-vdr-trivy`) that gives
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) the cluster's

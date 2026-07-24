@@ -1,6 +1,6 @@
 # trivy-plugin-vdr-skills
 
-Agent skills that capture operator-attested metadata for
+Agent skills that capture reviewable security metadata for
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) FedRAMP
 VDR/VER scoring. The Kubernetes skills read clusters with read-only `kubectl`
 and write ConfigMaps locally. The Terraform skill selectively adds reviewable
@@ -9,18 +9,24 @@ cluster or cloud account by an agent.**
 
 ## The skills
 
-### `capture-dataflow` → the `vdr-dataflow` ConfigMap
+### `capture-dataflow` → the `vdr-dataflow` ConfigMap (beta)
 
-Builds the cluster's dataflow evidence for internet-reachability analysis. It
-works through evidence sources in stages — declared **NetworkPolicies**, then
-**service-mesh authorization** resources, then optional **Hubble / mesh flow
-exports**, then declared **env / Secret / ConfigMap** connection analysis —
-evaluating after each stage whether the evidence collected is sufficient
-before descending to the next. It produces the `vdr-dataflow` ConfigMap plus
-per-namespace Mermaid dataflow diagrams for operator review. The agent-assisted
-review also records **broker candidates** — possible payload paths through cloud
-brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes alone cannot confirm — each
-with the workload-identity principal to verify against IAM later.
+> **Status:** This skill is in beta and may be deprecated. Treat its schema and
+> generated artifacts as experimental analysis aids rather than a stable
+> long-term interface.
+
+The skill is useful for discovering and reviewing data flows and
+interrelationships among workloads, services, ingress paths, policy controls,
+and external dependencies in Kubernetes environments. It builds the cluster's
+dataflow evidence for internet-reachability analysis by working through
+evidence sources in stages — declared **NetworkPolicies**, then **service-mesh
+authorization** resources, then optional **Hubble / mesh flow exports**, then
+declared **env / Secret / ConfigMap** connection analysis. It produces the
+`vdr-dataflow` ConfigMap plus per-namespace Mermaid diagrams for operator
+review. The agent-assisted review also records **broker candidates** — possible
+payload paths through cloud brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes
+alone cannot confirm — each with the workload-identity principal to verify
+against IAM later.
 
 ### `generate-vdr-configmap` → the `vdr-fedramp` ConfigMap
 
@@ -30,11 +36,13 @@ A, Low → B, Moderate → C, High → D), the **agency scope**
 (single/multi-agency), and per-workload compositional decision traces. Each
 trace has one independently mapped reason for disclosure, trusted change, and
 dependency/outage, producing a deterministic CR/IR/AR vector while preserving
-the rationale in the archetype value. The skill proposes traces from a
-read-only workload and privilege inventory, then emits a central
-`vdr-fedramp` ConfigMap rule for every confirmed workload plus a complete
-assignment-coverage ledger. Direct labels are optional operator-requested
-overrides, never the default output.
+the rationale in the archetype value. The skill classifies from a read-only
+workload and privilege inventory, makes explicit best-effort assignments when
+operator detail is incomplete, then emits a central `vdr-fedramp` ConfigMap
+rule for every workload plus a complete assignment-coverage ledger. Every rule
+records confidence; medium- and low-confidence decisions are marked for manual
+review in the YAML and printed to the terminal. Direct labels are optional
+operator-requested overrides, never the default output.
 
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 
@@ -89,18 +97,20 @@ discovery path differs.
   manifest and label command is written to a local output directory for
   review; applying is an explicit operator action (`kubectl apply -f` or a
   GitOps commit).
-- Attestations (Class, scope, environment intent, and decision traces) are
-  explicit operator decisions captured by the interview — the skills propose,
-  the operator confirms. HA is recorded as mitigation evidence and never used
-  to lower the Availability Requirement.
+- Operator attestations remain distinct from agent inferences. Missing impact
+  detail does not suppress the ConfigMap: the generation skill makes a
+  conservative, evidence-backed assignment and exposes its confidence and
+  review needs. HA is recorded as mitigation evidence and never used to lower
+  the Availability Requirement.
 
 ## How the ConfigMaps are consumed
 
 Both ConfigMaps are read in-cluster by
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr):
 `vdr-fedramp` drives PAIN scoring and `VDR-TFR-PVR` remediation deadlines
-(Certification Class, agency scope, archetype rules), and `vdr-dataflow`
-supplies the dataflow evidence for internet-reachability determination. See
+(Certification Class, agency scope, archetype rules). The beta
+`vdr-dataflow` workflow can supply experimental dataflow evidence for
+internet-reachability determination, but may be changed or deprecated. See
 that repository's README for the scoring model and the ConfigMap schemas.
 
 ## License

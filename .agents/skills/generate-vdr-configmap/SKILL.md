@@ -1,6 +1,6 @@
 ---
 name: generate-vdr-configmap
-description: Generate or update the trivy-plugin-vdr vdr-fedramp scoring ConfigMap from explicit FedRAMP Class, agency-scope, and compositional CR/IR/AR decision-trace attestations; inventory Kubernetes workloads read-only, centrally assign every confirmed workload with ConfigMap rules, validate complete assignment coverage, and never apply anything.
+description: Generate or update the trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and compositional CR/IR/AR decision traces; inventory Kubernetes workloads read-only, make evidence-backed best-effort assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, print every non-high-confidence decision, validate complete coverage, and never apply anything.
 ---
 
 # Generate VDR ConfigMap
@@ -15,16 +15,20 @@ In commands below, resolve `<skill-dir>` to the directory containing this file.
   `label`, `patch`, `edit`, or `delete`.
 - Write only under `./vdr-configmap-output/`. The operator reviews and applies
   the output manually or through GitOps.
-- Treat Class, agency scope, environment intent, and every assigned decision
-  trace as operator attestations. Propose values; never silently assume them.
+- Ask for Class, agency scope, environment intent, and workload consequences,
+  but do not let incomplete answers stop artifact generation after a successful
+  inventory. Make the strongest evidence-backed best guess, state every
+  assumption, and mark its confidence. Never present an inference as an
+  operator attestation.
 - Treat the generated ConfigMap as the default assignment surface for every
-  confirmed workload. Ownership and labelability never decide whether a
+  inventoried workload. Ownership and labelability never decide whether a
   workload receives a ConfigMap rule.
-- Account for every inventoried workload. Generation is incomplete unless each
-  workload either resolves to a confirmed archetype or appears as an explicit
-  operator-accepted unresolved exception. Never omit a workload silently.
+- Account for every inventoried workload. Ordinary uncertainty is not an
+  unresolved exception: assign the most defensible trace, lower its confidence,
+  and flag it for review. Never omit a workload silently.
 - For a fresh evaluation, do not read or use the existing `vdr-fedramp`
-  ConfigMap. Existing labels may be reported but must be reconfirmed.
+  ConfigMap. Existing labels may be reported, but do not treat them as operator
+  attestations unless reconfirmed.
 - Never retrieve Secret resources or values. Reference names visible in
   workload specs are sufficient evidence; never reproduce credential material.
 
@@ -60,7 +64,7 @@ confirmation before inventory. State that cluster access remains read-only.
 Pass that exact reviewed name to every inventory query; never rely on a mutable
 current-context after confirmation.
 
-### 2. Confirm Class and agency scope
+### 2. Determine Class and agency scope
 
 Map the existing FedRAMP authorization to Certification Class:
 
@@ -71,7 +75,7 @@ Map the existing FedRAMP authorization to Certification Class:
 | FedRAMP Moderate | C |
 | FedRAMP High | D |
 
-Require the operator to confirm the Class. Then confirm the cluster-wide
+Ask the operator to confirm the Class. Then ask for the cluster-wide
 `multiAgency` default:
 
 - `true`: compromise can affect several agencies from this cluster.
@@ -79,6 +83,13 @@ Require the operator to confirm the Class. Then confirm the cluster-wide
 
 Do not infer this flag from workload population. Namespace and workload
 `vdr.fedramp.io/multi-agency` labels remain available for exceptions.
+
+If either value remains unanswered, infer it from explicit authorization or
+tenant evidence when available. Otherwise emit fail-closed provisional values
+(`D` and `true`), annotate each assumed value immediately above its YAML key
+with `# confidence: low` and `# manual-review: ...`, record the assumption in
+the coverage ledger, and include it in the terminal review report. Missing
+Class or agency-scope answers never justify withholding `vdr-fedramp.yaml`.
 
 ### 3. Inventory workloads and structural evidence
 
@@ -123,7 +134,7 @@ A managed-namespace match is an ownership hint, not a decision and not a
 metadata-transport choice. Include provider-controlled, customer-controlled,
 third-party, and application workloads in the same central assignment plan.
 
-### 4. Ask the impact questions
+### 4. Ask focused impact questions, then infer the rest
 
 Ask no more than five questions for an asset or a coherent workload group:
 
@@ -145,21 +156,43 @@ logically unavailable across all replicas; record redundancy only as a
 mitigating control outside the requirement vector. Population informs outage
 consequence but is not an independent multiplier.
 
-### 5. Propose and confirm traces
+Do not repeat broad questions after the operator authorizes best judgment.
+Answers such as "potentially all, depending on workload" establish the range;
+use inventory evidence and workload role to choose within that range. Ask a
+follow-up only when one answer would materially change several assignments and
+the operator has not already delegated the choice. Otherwise proceed.
+
+Use these confidence levels consistently:
+
+- `high`: direct operator attestation for the assignment, or strong and
+  unambiguous structural evidence for the workload's role and all three impact
+  dimensions;
+- `medium`: the role is well supported, but data sensitivity, authority,
+  population, or outage consequence relies partly on a conventional workload
+  inference;
+- `low`: evidence is sparse, conflicting, name-based, or depends on
+  infrastructure outside Kubernetes.
+
+Confidence describes evidence quality, not impact severity. Never lower a
+CR/IR/AR value because confidence is low. When several outcomes remain
+credible, choose the strongest credible consequence and state what would
+change the result.
+
+### 5. Assign traces and expose uncertainty
 
 For each inventoried workload, show:
 
 - workload or precise workload group;
 - exact three-part trace;
 - derived CR/IR/AR vector;
-- one-line evidence and any operator-dependent assumption;
+- one-line evidence and every assumption;
 - confidence level.
 
 Build the assignment plan from the complete inventory, not from ownership or
 whether a workload can retain labels. Use exact `nameRules` by default. A
 narrow, stable name pattern may cover a coherent group only when every current
-match has the same confirmed trace. Use a `namespaceRule` only when every
-relevant workload in that namespace has the same confirmed trace. Treat
+match has the same assigned trace. Use a `namespaceRule` only when every
+relevant workload in that namespace has the same assigned trace. Treat
 `kindRules` as exceptional; never use a blanket Job fallback unless every Job
 it can match is proven coherent and the operator explicitly accepts it.
 
@@ -170,28 +203,30 @@ Continue suppressing CronJob-owned Jobs because the CronJob is the durable
 scorable workload.
 
 Existing explicit archetype labels have higher runtime precedence. Reconfirm
-them and record whether they agree with the central rule; flag unknown or
-conflicting labels because they can prevent the intended rule from resolving.
-Offer direct labels only when the operator explicitly requests an override.
+them when possible and record whether they agree with the central rule; flag
+unknown or conflicting labels because they can prevent the intended rule from
+resolving. Offer direct labels only when the operator explicitly requests an
+override.
 
-Ask when payload type, cross-environment authority, or business consequence
-cannot be learned from cluster state. An unconfirmed workload may remain at the
-`unclassified` H/H/H fail-safe only after the operator explicitly accepts it as
-an unresolved exception; record the workload and reason in the coverage file.
+Do not use `unclassified` merely because payload type, cross-environment
+authority, or business consequence is uncertain. Infer from role and
+structural evidence, choose the strongest credible trace, and mark it medium or
+low confidence. Reserve `unclassified` for a technical validation failure that
+must be fixed before handoff, not as a substitute for best-effort generation.
 
 ### 6. Compile the scoring catalog
 
-Validate confirmed traces and generate exact catalog entries with:
+Validate assigned traces and generate exact catalog entries with:
 
 ```bash
 python3 <skill-dir>/scripts/reason_codes.py \
-  --cover-27 <confirmed-trace>...
+  --cover-27 <assigned-trace>...
 ```
 
 `--cover-27` adds a canonical trace only for vector combinations not already
-represented. Use it when the operator confirms that the policy should retain
-all 27 CR/IR/AR permutations. Coverage-only entries are policy capability, not
-asset assignments; do not assign them without a workload attestation.
+represented. Use it when the policy should retain all 27 CR/IR/AR
+permutations. Coverage-only entries are policy capability, not asset
+assignments; do not assign them to a workload without role evidence.
 
 ### 7. Emit the artifacts
 
@@ -203,10 +238,17 @@ Write three required files under `./vdr-configmap-output/`:
      summary together as the coverage baseline.
 2. `vdr-fedramp.yaml`
    - Namespace `fedramp-vdr-trivy` and ConfigMap `vdr-fedramp`.
-   - Quoted `class` and `multiAgency` strings.
+   - Quoted `class` and `multiAgency` strings. Put a confidence comment
+     immediately above each value, even when it is operator-confirmed; add a
+     manual-review comment whenever its confidence is not high.
    - Exact custom `archetypes` entries and central assignment rules for every
-     confirmed inventoried workload, regardless of ownership.
-   - Prefer exact `nameRules`; allow narrow stable patterns only for confirmed
+     inventoried workload, regardless of ownership or confidence.
+   - Put a `# confidence: high|medium|low` comment immediately above every
+     assignment rule or coherent rule group. Add a nearby
+     `# manual-review: ...` comment for every medium- or low-confidence rule,
+     naming the uncertainty that could change its trace. Use plain, sanitized
+     evidence; never include credentials or Secret values.
+   - Prefer exact `nameRules`; allow narrow stable patterns only for assigned
      coherent groups. Use `namespaceRules` and `kindRules` only under the
      explicit uniformity gates in step 5.
    - Include explicit rules for standalone and Helm-hook Jobs. Use narrowly
@@ -215,12 +257,20 @@ Write three required files under `./vdr-configmap-output/`:
    - Avoid broad namespace fallbacks where privilege varies; unknown future
      components should fail loud.
 3. `assignment-coverage.json`
-   - Record the reviewed context, inventory total, and one entry for every
-     inventoried workload: namespace, kind, name, confirmed trace and vector,
-     expected resolution source, and status.
-   - Record every operator-accepted unresolved exception with its reason.
-   - Summarize counts by namespace, resolution source, confirmed assignment,
-     and accepted unresolved exception.
+   - Use top-level `context`, `inventoryTotal`, `assignments`,
+     `configurationAssumptions`, and `summary` fields.
+   - Add one `assignments` entry for every inventoried workload: `namespace`,
+     `kind`, `name`, `trace`, `vector`, `resolutionSource`, status
+     (`operator-confirmed` or `agent-inferred`), confidence (`high`, `medium`,
+     or `low`), `evidence`, `assumptions`, and `manualReview`.
+   - Use an empty `manualReview` list only for high-confidence entries. Give
+     every medium- or low-confidence entry at least one concrete verification
+     item.
+   - Record provisional Class, `multiAgency`, or external-ingress assumptions
+     in a top-level `configurationAssumptions` list. Give each item `field`,
+     `value`, `confidence`, `evidence`, `assumptions`, and `manualReview`
+     fields.
+   - Summarize counts by namespace, resolution source, status, and confidence.
 
 If the operator explicitly requests direct-label overrides, also emit
 `label-overrides.sh`. Begin it with `FOR OPERATOR REVIEW AND EXECUTION`, state
@@ -234,8 +284,21 @@ override directly in one-shot and Helm-hook Job manifests.
 
 Ask once whether any Ingress/Gateway class is fronted by a load balancer built
 outside Kubernetes. Include `internetAccessibleIngressClasses` or
-`internetAccessibleGatewayClasses` only for classes the operator confirms.
-Omit the keys when there are none.
+`internetAccessibleGatewayClasses` for high-confidence observed or
+operator-confirmed classes. If outside-Kubernetes reachability is unanswered,
+make a conservative best guess from active route objects, controller Services,
+addresses, annotations, and class purpose. Annotate the key with confidence and
+manual-review comments, and record the assumption in
+`configurationAssumptions`. Do not invent Gateway classes when no active
+Gateway objects exist. Omit the keys when the best-supported conclusion is
+that there are none. When an omission is not high confidence, put confidence
+and manual-review comments at the corresponding location in `scoring.yaml` and
+also report the omission in the terminal.
+
+Always write `vdr-fedramp.yaml` after a successful inventory and classification
+pass, even when some assignments or configuration values are medium or low
+confidence. Uncertainty belongs in comments and reports, not in a withheld
+artifact.
 
 Do not put PAIN word thresholds in the ConfigMap. Those remain governed
 `--scoring-config` policy and are intentionally not cluster-overridable.
@@ -250,21 +313,39 @@ Before handoff:
 
 - parse the outer YAML and embedded `scoring.yaml`;
 - verify every trace has three registered reasons and matching H/M/L values;
+- verify every assignment rule or coherent rule group has a confidence comment
+  and every non-high-confidence rule has a manual-review comment;
+- verify Class, `multiAgency`, and emitted or provisionally omitted
+  internet-accessibility keys have the required confidence and manual-review
+  comments;
 - verify all rule and label references are declared exactly;
 - verify all 27 vectors are represented when requested;
 - check rule globs, ordering, and duplicate/shadowed entries;
 - resolve every inventory entry using actual precedence: workload label,
   namespace label, `nameRule`, `kindRule`, `namespaceRule`, then fail-safe;
-- fail validation if a confirmed workload resolves to `unclassified`, if an
-  unknown or unconfirmed conflicting explicit label blocks its intended rule,
-  or if any inventory entry is absent from `assignment-coverage.json` without
-  an operator-accepted unresolved exception;
-- verify the inventory equation: confirmed assignments plus accepted
-  unresolved exceptions equals the inventory total, with no duplicate workload
-  entries; report the same accounting by namespace and resolution source;
+- fail validation if any workload resolves to `unclassified`, if an unknown or
+  conflicting explicit label blocks its intended rule, or if any inventory
+  entry is absent from `assignment-coverage.json`;
+- verify the inventory equation: assignments equal the inventory total, with
+  no duplicate workload entries; report the same accounting by namespace,
+  resolution source, status, and confidence;
+- verify every coverage entry has a valid confidence, evidence, assumptions,
+  and manual-review shape, and every non-high-confidence entry has at least one
+  manual-review item;
 - verify every emitted assignment rule matches at least one inventoried
   workload unless the operator explicitly attests a forward-looking rule;
 - when `label-overrides.sh` exists, run `bash -n` on it;
+- print the mandatory confidence report with:
+
+  ```bash
+  python3 <skill-dir>/scripts/report_confidence.py \
+    ./vdr-configmap-output/assignment-coverage.json
+  ```
+
+  Treat a nonzero exit as a validation failure. The report must print every
+  medium- and low-confidence assignment and configuration assumption with the
+  selected trace/value, evidence basis, and concrete manual-review action. It
+  must print an explicit `none` result when all decisions are high confidence.
 - run the proprietary-term deny-list scan when applicable;
 - keep the `skills/` and `.agents/skills/` copies byte-identical.
 
@@ -276,10 +357,11 @@ Never execute any generated artifact.
 
 ## Handoff
 
-Report the inventory total, confirmed assignment count, accepted unresolved
-count, and any precedence conflicts. Do not call the generation complete when
-the accounting rule fails. Tell the operator to review all required files and
-apply the ConfigMap manually or through the owning GitOps repository. Mention
-label overrides only when they were explicitly requested. Re-run the skill
-after estate, Class, scope, or policy changes; anything unresolved continues to
-score loudly.
+Report the inventory total, operator-confirmed count, agent-inferred count,
+confidence counts, and any precedence conflicts. Repeat the non-high-confidence
+manual-review list in the terminal handoff; do not hide it behind the YAML.
+Do not call generation complete when the accounting rule fails. Tell the
+operator to review all required files and apply the ConfigMap manually or
+through the owning GitOps repository. Mention label overrides only when they
+were explicitly requested. Re-run the skill after estate, Class, scope, policy,
+or reviewed assumptions change.
