@@ -69,7 +69,7 @@ adjust with evidence. Record everything in `security-objectives.json`
 
 ### 3. Class and agencies -> ASO
 
-Run wizard Phases B and C questions 11: identify deploying agencies (or
+Run wizard Phase B plus Phase C question 11: identify deploying agencies (or
 target agencies as data-profile guides only), research each with consent,
 present per-objective estimates with rationale and overlays for confirmation,
 and map the authorization to Class (Ready A, Low B, Moderate C, High D). Run
@@ -173,6 +173,8 @@ Write under `./vdr-configmap-output/`:
      `# manual-review:` comment for every non-high rule, and a
      `# capped:`/`# breakout:` comment on rules whose vector was capped or
      broke out (e.g. `# capped: CR H->M, AR M->L by envelope`).
+   - See `assets/vdr-fedramp.example.yaml` for a complete fictional example of
+     this shape.
 3. `security-objectives.json` — the full derivation record per the guide
    schema.
 4. `assignment-coverage.json` — one assignment per inventoried workload per

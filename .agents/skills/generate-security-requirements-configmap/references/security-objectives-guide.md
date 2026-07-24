@@ -129,7 +129,7 @@ These are rough profiles by system type, not named products.
 | Identity / SSO provider | H | H | H | Credentials and durable trust material |
 | Vulnerability management | M | M | M | C:M baseline per calibration |
 | Change management / ITSM | M | M | M | Change records drive production change; C:M baseline |
-| Document / records management | corpus | M | M | C tracks the stored corpus |
+| Document / records management | L-H | M | M | C tracks the stored corpus |
 | Learning management | L-M | M | L-M | Mostly public content; workforce rosters raise C |
 
 ## Wizard question bank
@@ -323,6 +323,9 @@ validation failures, never as a substitute for best-effort assignment.
   "systemProfile": {
     "product": "generic product name",
     "confirmedDescription": "operator-confirmed purpose and data summary",
+    "dataTypes": ["..."],
+    "contaminationPaths": ["..."],
+    "agencyDeviceFootprint": {"present": false, "agents": [], "controllingComponents": []},
     "sso": {"c": {"level": "M", "rationale": "..."},
              "i": {"level": "M", "rationale": "..."},
              "a": {"level": "M", "rationale": "..."}},
@@ -355,7 +358,11 @@ validation failures, never as a substitute for best-effort assignment.
 Rules: top-level `envelope` must equal per-objective `min(sso, aso)`;
 `systemProfile.sso` levels must match top-level `sso`; with definite agency
 profiles, top-level `aso` equals the per-objective max over them; namespace
-scope requires non-empty `multiAgencyNamespaces`.
+scope requires non-empty `multiAgencyNamespaces`. Optional fields —
+`systemProfile.dataTypes`, `systemProfile.contaminationPaths`,
+`systemProfile.agencyDeviceFootprint`, and a `governingSource` string on each
+divergence — are recorded when known; the gate tolerates and ignores extra
+keys.
 
 `assignment-coverage.json`: top-level `context`, `inventoryTotal`,
 `assignments`, `configurationAssumptions`, `summary`. One assignment per
