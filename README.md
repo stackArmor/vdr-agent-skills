@@ -2,10 +2,11 @@
 
 Agent skills that capture reviewable security metadata for
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) FedRAMP
-VDR/VER scoring. The Kubernetes skills read clusters with read-only `kubectl`
-and write ConfigMaps locally. The Terraform skill selectively adds reviewable
-metadata to CIS Foundations-mapped cloud assets. **Nothing is ever applied to a
-cluster or cloud account by an agent.**
+VDR/VER scoring. One skill assesses system and agency security objectives
+without infrastructure access; the Kubernetes skills read clusters with
+read-only `kubectl` and write ConfigMaps locally. The Terraform skill
+selectively adds reviewable metadata to CIS Foundations-mapped cloud assets.
+**Nothing is ever applied to a cluster or cloud account by an agent.**
 
 ## The skills
 
@@ -28,36 +29,29 @@ payload paths through cloud brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes
 alone cannot confirm — each with the workload-identity principal to verify
 against IAM later.
 
-### `generate-security-requirements-configmap` → the `vdr-fedramp` ConfigMap
+### `generate-security-objectives` → `security-objectives.json`
 
-Derives a per-component **Security Requirements** vector (CR/IR/AR) from three
-per-objective inputs: the **system's** security objectives (what the product
-holds by design, confirmed by the operator from consented web research), the
-deploying **agency's** security objectives (the data that agency would
-actually place in the system — objective-level, never the FIPS 199 high-water
-mark, with the Certification Class used as a prior rather than authority), and
-each **component's** security objectives from read-only structural evidence.
-The envelope `min(system, agency)` caps component vectors; enumerated breakout
-categories (agency-endpoint delivery paths, cross-system trust anchors, shared
-CSP infrastructure) may exceed it with written justification and manual-review
-flags. Emits the `vdr-fedramp` ConfigMap (label key
-`vdr.fedramp.io/security-requirements`, dot-free `cr-*_ir-*_ar-*` values, a
-human-only `humanReviewCompleted` marker) plus `security-objectives.json` and
-`assignment-coverage.json` justification records. Every decision carries
-confidence; medium/low decisions, capped components, and breakouts are printed
-for review.
+Assesses the **system's** security objectives (what the product holds and does
+by design) together with the deploying **agency's** expected use (the data that
+agency will actually place in the system). It applies the FedRAMP Class as a
+transparent prior, not as authority over the data profile, and derives an
+optional ceiling with `min(SSO, ASO)`. The single JSON artifact contains the
+evidence, confidence, divergence record, wire value such as
+`cr-m_ir-m_ar-l`, and display value such as `CR:M/IR:M/AR:L`. It does not
+access Kubernetes, classify components, or generate a ConfigMap.
 
-### `generate-vdr-configmap` → the `vdr-fedramp` ConfigMap (deprecated)
+The ceiling may be copied into `vdr-fedramp` as
+`securityRequirementsCeiling` or passed to trivy-plugin-vdr with
+`--security-requirements-ceiling`. Using it is optional.
 
-> **Status:** Superseded by `generate-security-requirements-configmap`. Use it
-> only to maintain clusters that still resolve the legacy
-> `vdr.fedramp.io/asset-archetype` vocabulary.
+### `generate-vdr-configmap` → the archetype-based `vdr-fedramp` ConfigMap
 
-Interviews the operator to capture the scoring attestations: the FedRAMP
-**Certification Class**, the **agency scope** (single/multi-agency), and
-per-workload compositional decision traces producing deterministic CR/IR/AR
-vectors. Emits a central `vdr-fedramp` ConfigMap rule for every workload plus
-an assignment-coverage ledger with confidence and manual-review reporting.
+Interviews the operator to capture the canonical scoring attestations: the
+FedRAMP **Certification Class**, **agency scope** (single/multi-agency), and
+per-workload compositional archetype decision traces producing deterministic
+CR/IR/AR vectors. Emits a central `vdr-fedramp` ConfigMap rule for every
+workload plus an assignment-coverage ledger with confidence and manual-review
+reporting.
 
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 
@@ -80,8 +74,8 @@ Class and multi-agency defaults.
 /plugin install trivy-plugin-vdr-skills
 ```
 
-Then invoke either skill by name, or just describe what you need ("set up the
-FedRAMP scoring ConfigMap for this cluster").
+Then invoke a skill by name, or describe what you need ("assess the system and
+agency security objectives" or "set up the FedRAMP scoring ConfigMap").
 
 ### Antigravity, Codex, and other agents
 
@@ -94,7 +88,7 @@ discovery path differs.
 
 | Tool | Notes |
 |------|-------|
-| `kubectl` (authenticated) | For the Kubernetes skills. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `kubectl` (authenticated) | For `generate-vdr-configmap` and `capture-dataflow`; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
 | `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
 | `python3` (>= 3.8) | For the inventory/capture scripts. Standard library only — no `pip install`. |
 
@@ -113,19 +107,20 @@ discovery path differs.
   review; applying is an explicit operator action (`kubectl apply -f` or a
   GitOps commit).
 - Operator attestations remain distinct from agent inferences. Missing impact
-  detail does not suppress the ConfigMap: the generation skill makes a
-  conservative, evidence-backed assignment and exposes its confidence and
-  review needs. HA is recorded as mitigation evidence and never used to lower
-  the Availability Requirement.
+  detail does not suppress an objectives artifact or ConfigMap: each skill
+  makes a conservative, evidence-backed assessment and exposes its confidence
+  and review needs. HA is mitigation evidence and never lowers the
+  Availability Requirement.
 
 ## How the ConfigMaps are consumed
 
 Both ConfigMaps are read in-cluster by
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr):
 `vdr-fedramp` drives PAIN scoring and `VDR-TFR-PVR` remediation deadlines
-(Certification Class, agency scope, and security-requirements rules; legacy
-archetype rules remain supported for clusters generated by the deprecated
-skill). The beta
+(Certification Class, agency scope, and archetype rules). An optional
+`securityRequirementsCeiling` in that ConfigMap—or the corresponding runtime
+flag—caps archetype CR/IR/AR values only when recalculating reported PAIN
+scores. Its absence is valid and silent. The beta
 `vdr-dataflow` workflow can supply experimental dataflow evidence for
 internet-reachability determination, but may be changed or deprecated. See
 that repository's README for the scoring model and the ConfigMap schemas.

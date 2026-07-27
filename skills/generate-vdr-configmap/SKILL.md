@@ -1,16 +1,9 @@
 ---
 name: generate-vdr-configmap
-description: Deprecated in favor of generate-security-requirements-configmap, which derives security-requirements vectors from system, agency, and component security objectives. Generate or update the trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and compositional CR/IR/AR decision traces; inventory Kubernetes workloads read-only, make evidence-backed best-effort assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, print every non-high-confidence decision, validate complete coverage, and never apply anything.
+description: Generate or update the canonical archetype-based trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and compositional CR/IR/AR decision traces; inventory Kubernetes workloads read-only, make evidence-backed best-effort archetype assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, validate complete coverage, and never apply anything.
 ---
 
 # Generate VDR ConfigMap
-
-> **Deprecated:** This skill is superseded by
-> `generate-security-requirements-configmap`, which derives per-component
-> security-requirements vectors from system, agency, and component security
-> objectives and uses the `vdr.fedramp.io/security-requirements` label
-> vocabulary. Use this skill only to maintain clusters that still resolve the
-> legacy `vdr.fedramp.io/asset-archetype` vocabulary.
 
 Interview the operator, inspect the selected Kubernetes cluster read-only, and
 write the governed scoring artifacts consumed by `trivy-plugin-vdr`.
