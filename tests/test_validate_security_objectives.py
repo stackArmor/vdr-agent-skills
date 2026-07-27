@@ -95,6 +95,27 @@ class ContractTests(unittest.TestCase):
             with self.assertRaisesRegex(mod.ValidationError, field):
                 mod.validate(document)
 
+    def test_nist_reference_must_match_bundled_catalog(self):
+        document = load_example()
+        reference = document["systemProfile"]["nistInformationTypes"][0]
+        reference["provisionalImpact"]["c"] = "H"
+        with self.assertRaisesRegex(mod.ValidationError, "catalog"):
+            mod.validate(document)
+
+    def test_confirmed_nist_reference_requires_applied_impact(self):
+        document = load_example()
+        reference = document["systemProfile"]["nistInformationTypes"][0]
+        reference["appliedImpact"] = None
+        with self.assertRaisesRegex(mod.ValidationError, "appliedImpact"):
+            mod.validate(document)
+
+    def test_candidate_nist_reference_cannot_be_applied(self):
+        document = load_example()
+        reference = document["systemProfile"]["nistInformationTypes"][0]
+        reference["applicability"] = "candidate"
+        with self.assertRaisesRegex(mod.ValidationError, "must be null"):
+            mod.validate(document)
+
 
 class CliTests(unittest.TestCase):
     SCRIPT = SCRIPTS / "validate_security_objectives.py"

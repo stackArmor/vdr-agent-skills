@@ -15,6 +15,27 @@
       "present": false,
       "details": []
     },
+    "nistInformationTypes": [
+      {
+        "id": "C.2.3.4",
+        "name": "Strategic Planning",
+        "applicability": "confirmed",
+        "provisionalImpact": {
+          "c": "L",
+          "i": "L",
+          "a": "L"
+        },
+        "appliedImpact": {
+          "c": "M",
+          "i": "M",
+          "a": "M"
+        },
+        "specialFactorsConsidered": [
+          "The deployment aggregates non-public draft plans and durable planning records."
+        ],
+        "rationale": "The NIST provisional profile is a starting point; deployment-specific aggregation and durable-record consequences raise all three applied objectives."
+      }
+    ],
     "sso": {
       "c": {
         "level": "M",
@@ -39,6 +60,27 @@
       "agency": "generic deploying agency",
       "relationship": "definite",
       "overlays": [],
+      "nistInformationTypes": [
+        {
+          "id": "C.2.3.4",
+          "name": "Strategic Planning",
+          "applicability": "confirmed",
+          "provisionalImpact": {
+            "c": "L",
+            "i": "L",
+            "a": "L"
+          },
+          "appliedImpact": {
+            "c": "M",
+            "i": "M",
+            "a": "L"
+          },
+          "specialFactorsConsidered": [
+            "The agency will store non-public planning material but can reconstruct its limited deployment records."
+          ],
+          "rationale": "Actual agency use raises confidentiality and integrity while its reconstructibility evidence leaves availability low."
+        }
+      ],
       "aso": {
         "c": {
           "level": "M",

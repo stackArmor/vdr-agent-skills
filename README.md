@@ -40,6 +40,15 @@ evidence, confidence, divergence record, wire value such as
 `cr-m_ir-m_ar-l`, and display value such as `CR:M/IR:M/AR:L`. It does not
 access Kubernetes, classify components, or generate a ConfigMap.
 
+The skill includes a
+[source-pinned machine-readable catalog](skills/generate-security-objectives/references/nist-sp-800-60-v2r1-information-types.json)
+of all 170 information-type records in NIST SP 800-60 Volume II Revision 1. It
+queries the catalog to identify candidate FIPS 199 information types, preserves
+each record's provisional C/I/A profile and special factors, and records how
+confirmed types informed the system and agency objectives. NIST recommendations
+remain advisory starting points and never replace actual-use evidence or a
+governing categorization.
+
 The ceiling may be copied into `vdr-fedramp` as
 `securityRequirementsCeiling` or passed to trivy-plugin-vdr with
 `--security-requirements-ceiling`. Using it is optional.

@@ -4,6 +4,7 @@
 import argparse
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 SCRIPT_DIR = str(Path(__file__).resolve().parent)
@@ -22,6 +23,12 @@ CONFIDENCE = {"low", "medium", "high"}
 STATUS = {"operator-confirmed", "agent-inferred"}
 RELATIONSHIPS = {"definite", "target"}
 CLASSES = {"A", "B", "C", "D", "unknown"}
+NIST_APPLICABILITY = {"candidate", "confirmed", "excluded"}
+NIST_CATALOG = (
+    Path(__file__).resolve().parent.parent
+    / "references"
+    / "nist-sp-800-60-v2r1-information-types.json"
+)
 FORBIDDEN_TOP_LEVEL = {
     "assignments",
     "ceilingMode",
@@ -86,6 +93,87 @@ def detail_vector(value, location):
     return normalized
 
 
+@lru_cache(maxsize=1)
+def nist_catalog_index():
+    try:
+        catalog = json.loads(NIST_CATALOG.read_text(encoding="utf-8"))
+        return {
+            record["id"]: record
+            for record in catalog["informationTypes"]
+        }
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValidationError(f"cannot load bundled NIST catalog: {exc}") from exc
+
+
+def validate_nist_information_types(record, location):
+    if "nistInformationTypes" not in record:
+        return
+    references = record["nistInformationTypes"]
+    if not isinstance(references, list):
+        raise ValidationError(f"{location}.nistInformationTypes must be a list")
+    catalog = nist_catalog_index()
+    seen = set()
+    objective_names = {
+        "c": "confidentiality",
+        "i": "integrity",
+        "a": "availability",
+    }
+    for index, reference in enumerate(references):
+        ref_location = f"{location}.nistInformationTypes[{index}]"
+        reference = require_object(reference, ref_location)
+        identifier = require_string(reference.get("id"), f"{ref_location}.id")
+        if identifier in seen:
+            raise ValidationError(f"{ref_location}.id is duplicated")
+        seen.add(identifier)
+        if identifier not in catalog:
+            raise ValidationError(
+                f"{ref_location}.id is not in the bundled NIST SP 800-60 catalog"
+            )
+        source = catalog[identifier]
+        name = require_string(reference.get("name"), f"{ref_location}.name")
+        if name != source["name"]:
+            raise ValidationError(f"{ref_location}.name does not match the catalog")
+        applicability = require_string(
+            reference.get("applicability"), f"{ref_location}.applicability"
+        )
+        if applicability not in NIST_APPLICABILITY:
+            raise ValidationError(
+                f"{ref_location}.applicability must be candidate, confirmed, or excluded"
+            )
+        expected_provisional = (
+            {
+                short: source["provisionalImpact"][long_name]
+                for short, long_name in objective_names.items()
+            }
+            if source["provisionalImpact"] is not None
+            else None
+        )
+        if reference.get("provisionalImpact") != expected_provisional:
+            raise ValidationError(
+                f"{ref_location}.provisionalImpact does not match the catalog"
+            )
+        require_string_list(
+            reference.get("specialFactorsConsidered"),
+            f"{ref_location}.specialFactorsConsidered",
+        )
+        require_string(reference.get("rationale"), f"{ref_location}.rationale")
+        applied = reference.get("appliedImpact")
+        source_is_numeric = (
+            expected_provisional is not None
+            and set(expected_provisional.values()).issubset({"L", "M", "H"})
+        )
+        if applicability == "confirmed" and source_is_numeric:
+            try:
+                normalize_vector(applied, f"{ref_location}.appliedImpact")
+            except DerivationError as exc:
+                raise ValidationError(str(exc)) from exc
+        elif applied is not None:
+            raise ValidationError(
+                f"{ref_location}.appliedImpact must be null unless a categorized "
+                "information type is confirmed"
+            )
+
+
 def maximum(vectors):
     rank = {"L": 0, "M": 1, "H": 2}
     return {
@@ -114,6 +202,7 @@ def validate(document):
         "systemProfile.confirmedDescription",
     )
     validate_evidence_record(system, "systemProfile")
+    validate_nist_information_types(system, "systemProfile")
     system_detail = detail_vector(system.get("sso"), "systemProfile.sso")
 
     try:
@@ -140,6 +229,7 @@ def validate(document):
                 f"{location}.relationship must be definite or target"
             )
         validate_evidence_record(profile, location)
+        validate_nist_information_types(profile, location)
         profile_aso = detail_vector(profile.get("aso"), f"{location}.aso")
         if relationship == "definite":
             definite.append(profile_aso)

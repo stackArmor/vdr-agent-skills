@@ -14,6 +14,9 @@ Each vector has Confidentiality, Integrity, and Availability objectives over
 - **Agency Security Objectives (ASO):** what a definite deploying agency will
   actually place in this system, evaluated per objective. It is not the
   agency's overall FIPS 199 high-water mark.
+- **NIST SP 800-60 information types:** provisional impact recommendations
+  aligned to FIPS 199. Confirmed matches inform SSO and ASO; they do not decide
+  either vector on their own.
 - **Security-requirements ceiling:** optional downstream metadata derived per
   objective:
 
@@ -39,6 +42,47 @@ calculation. A higher ceiling does not raise an archetype objective.
   should be reflected in system integrity and availability reasoning.
 - Replicas, backups, and failover are mitigations. They do not lower the
   inherent objective being measured.
+- NIST SP 800-60 base profiles are provisional. The record's special factors,
+  actual data, aggregation, use, system context, and governing sources can
+  raise or otherwise modify them.
+
+## NIST SP 800-60 information-type evidence
+
+The bundled catalog is a source-traceable conversion of NIST SP 800-60 Volume
+II Revision 1. It contains 170 management/support and mission-based records:
+168 security-category statements and two delivery mechanisms without a
+standalone impact profile. Each categorized record preserves its description,
+provisional C/I/A profile, objective rationale, special factors, recommendation,
+taxonomy, and PDF/document page references.
+
+Query narrowly rather than reading the whole JSON:
+
+```bash
+python3 <skill-dir>/scripts/query_nist_800_60.py --search "health care"
+python3 <skill-dir>/scripts/query_nist_800_60.py --id D.14.4 --json
+python3 <skill-dir>/scripts/query_nist_800_60.py --impact L,H,- --limit 20
+```
+
+Apply a result as follows:
+
+1. Search system functions, records, transactions, and agency use separately.
+2. Treat matches as candidates until the operator or direct evidence confirms
+   that the information enters the assessed boundary.
+3. For a confirmed type, copy the catalog ID, exact name, and provisional
+   profile. Read all three objective rationales and special factors.
+4. Produce an applied profile from actual use. Record which special factors
+   and contextual adjustments were considered and why the applied result
+   differs, if it does.
+5. Use the per-objective maximum of confirmed applied profiles as one input to
+   SSO or the agency profile's ASO. Then account for contamination paths,
+   aggregation, trusted actions, durable loss, and governing sources.
+
+Never lower a direct categorization or stronger evidence just because a
+catalog base profile is lower. A candidate or excluded match does not
+participate in objective math. `C.3.5.9 Information Sharing` has N/A objectives
+because the shared information types carry the impact. `D.26.1` and `D.26.2`
+are delivery mechanisms and have no standalone profile. Classified information
+and national-security systems are outside this publication's scope.
 
 ## Starting profiles
 
@@ -151,6 +195,17 @@ Write exactly one `security-objectives.json`:
     "dataTypes": ["..."],
     "contaminationPaths": ["..."],
     "agencyDeviceFootprint": {"present": false, "details": []},
+    "nistInformationTypes": [{
+      "id": "C.2.3.4",
+      "name": "Strategic Planning",
+      "applicability": "confirmed",
+      "provisionalImpact": {"c": "L", "i": "L", "a": "L"},
+      "appliedImpact": {"c": "M", "i": "M", "a": "M"},
+      "specialFactorsConsidered": [
+        "The deployment aggregates non-public draft plans and durable records."
+      ],
+      "rationale": "Deployment context raises the provisional profile."
+    }],
     "sso": {
       "c": {"level": "M", "rationale": "..."},
       "i": {"level": "M", "rationale": "..."},
@@ -165,6 +220,17 @@ Write exactly one `security-objectives.json`:
     "agency": "deploying agency",
     "relationship": "definite",
     "overlays": [],
+    "nistInformationTypes": [{
+      "id": "C.2.3.4",
+      "name": "Strategic Planning",
+      "applicability": "confirmed",
+      "provisionalImpact": {"c": "L", "i": "L", "a": "L"},
+      "appliedImpact": {"c": "M", "i": "M", "a": "L"},
+      "specialFactorsConsidered": [
+        "This agency stores non-public planning material."
+      ],
+      "rationale": "Actual agency use raises C and I; records are reconstructible."
+    }],
     "aso": {
       "c": {"level": "M", "rationale": "..."},
       "i": {"level": "M", "rationale": "..."},
@@ -203,6 +269,9 @@ Write exactly one `security-objectives.json`:
 Rules enforced by `validate_security_objectives.py`:
 
 - `systemProfile.sso` levels equal top-level SSO.
+- Optional `nistInformationTypes` entries use exact catalog IDs, names, and
+  provisional profiles. Confirmed categorized entries require an applied
+  C/I/A profile; candidate and excluded entries cannot be applied.
 - Definite agency profiles aggregate to top-level ASO using per-objective max.
   With none, `agencyUseSummary.basis` is `sso-fallback`, confidence is low,
   manual review is non-empty, and ASO equals SSO.

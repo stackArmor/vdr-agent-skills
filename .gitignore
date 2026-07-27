@@ -4,3 +4,4 @@ __pycache__/
 /output/
 vdr-dataflow-output/
 vdr-configmap-output/
+vdr-security-objectives-output/
