@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "systemProfile": {
+    "product": "generic project-management service",
+    "confirmedDescription": "Stores durable planning records for an agency deployment.",
+    "dataTypes": [
+      "portfolio planning records",
+      "workforce identifiers"
+    ],
+    "contaminationPaths": [
+      "free-text fields",
+      "document attachments"
+    ],
+    "agencyDeviceFootprint": {
+      "present": false,
+      "details": []
+    },
+    "sso": {
+      "c": {
+        "level": "M",
+        "rationale": "Aggregated planning records and workforce identifiers require moderate confidentiality."
+      },
+      "i": {
+        "level": "M",
+        "rationale": "Planning and prioritization decisions depend on record integrity."
+      },
+      "a": {
+        "level": "M",
+        "rationale": "Permanent loss of durable planning records would have a serious adverse effect."
+      }
+    },
+    "status": "operator-confirmed",
+    "confidence": "high",
+    "assumptions": [],
+    "manualReview": []
+  },
+  "agencyProfiles": [
+    {
+      "agency": "generic deploying agency",
+      "relationship": "definite",
+      "overlays": [],
+      "aso": {
+        "c": {
+          "level": "M",
+          "rationale": "The deployment will contain moderate-impact planning records."
+        },
+        "i": {
+          "level": "M",
+          "rationale": "The agency relies on accurate prioritization and status records."
+        },
+        "a": {
+          "level": "L",
+          "rationale": "The agency can reconstruct its limited deployment data from authoritative sources."
+        }
+      },
+      "status": "operator-confirmed",
+      "confidence": "high",
+      "assumptions": [],
+      "manualReview": []
+    }
+  ],
+  "agencyUseSummary": {
+    "basis": "definite-agencies",
+    "rationale": "ASO is the per-objective maximum for the definite deploying agency.",
+    "status": "operator-confirmed",
+    "confidence": "high",
+    "assumptions": [],
+    "manualReview": []
+  },
+  "classPrior": {
+    "class": "C",
+    "authorization": "FedRAMP Moderate",
+    "divergences": [
+      {
+        "objective": "a",
+        "estimate": "L",
+        "prior": "M",
+        "resolution": "L",
+        "rationale": "The operator confirmed that this deployment is reconstructible from authoritative records.",
+        "attestationStatus": "operator-confirmed"
+      }
+    ]
+  },
+  "sso": {
+    "c": "M",
+    "i": "M",
+    "a": "M"
+  },
+  "aso": {
+    "c": "M",
+    "i": "M",
+    "a": "L"
+  },
+  "securityRequirementsCeiling": {
+    "c": "M",
+    "i": "M",
+    "a": "L",
+    "wire": "cr-m_ir-m_ar-l",
+    "display": "CR:M/IR:M/AR:L"
+  }
+}

@@ -3,7 +3,8 @@ import importlib.util
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = REPO_ROOT / "skills" / "generate-security-requirements-configmap" / "scripts"
+SKILL = REPO_ROOT / "skills" / "generate-security-objectives"
+SCRIPTS = SKILL / "scripts"
 
 
 def load_script(stem):
