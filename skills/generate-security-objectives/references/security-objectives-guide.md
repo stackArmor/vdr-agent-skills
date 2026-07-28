@@ -24,9 +24,9 @@ Each vector has Confidentiality, Integrity, and Availability objectives over
   ceiling(o) = min(SSO(o), ASO(o))
   ```
 
-The ceiling never replaces asset archetypes. When supplied to
-`trivy-plugin-vdr`, it caps each resolved archetype objective only for PAIN
-calculation. A higher ceiling does not raise an archetype objective.
+The ceiling never replaces an asset security-impact profile. When supplied to
+`trivy-plugin-vdr`, it caps each resolved profile objective only for PAIN
+calculation. A higher ceiling does not raise a profile objective.
 
 ## Calibration rules
 
@@ -293,4 +293,4 @@ copy only the `wire` value into either:
 
 The runtime flag has precedence over the ConfigMap value. Reports normalize
 the value as `CR:H/IR:M/AR:L` and mark PAIN as recalculated only when the
-ceiling actually lowers an archetype objective.
+ceiling actually lowers a profile objective.

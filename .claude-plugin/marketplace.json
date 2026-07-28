@@ -5,14 +5,14 @@
     "url": "https://github.com/stackArmor"
   },
   "metadata": {
-    "description": "Agent skills for trivy-plugin-vdr FedRAMP VDR/VER metadata: system-and-agency security-objectives assessment, canonical archetype ConfigMap generation, cluster dataflow, and selective CIS-mapped Terraform asset tagging."
+    "description": "Agent skills for trivy-plugin-vdr FedRAMP VDR/VER metadata: system-and-agency security-objectives assessment, security-impact-profile ConfigMap generation, cluster dataflow, and selective CIS-mapped Terraform asset tagging."
   },
   "plugins": [
     {
       "name": "trivy-plugin-vdr-skills",
       "source": ".",
-      "description": "Four skills for FedRAMP VDR/VER evidence with trivy-plugin-vdr: assess system-and-agency security objectives, generate the canonical archetype-based vdr-fedramp ConfigMap, capture Kubernetes dataflow, and selectively classify CIS Foundations-mapped Terraform cloud assets. Generated artifacts and HCL edits stay local for review; the skills never apply cluster or cloud changes.",
-      "version": "0.6.0",
+      "description": "Four skills for FedRAMP VDR/VER evidence with trivy-plugin-vdr: assess system-and-agency security objectives, generate the canonical SIP-based vdr-fedramp ConfigMap, capture Kubernetes dataflow, and selectively classify CIS Foundations-mapped Terraform cloud assets. Generated artifacts and HCL edits stay local for review; the skills never apply cluster or cloud changes.",
+      "version": "0.7.0",
       "author": {
         "name": "stackArmor",
         "url": "https://github.com/stackArmor"

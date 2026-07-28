@@ -45,9 +45,9 @@ CLOUD_MANAGED_NS_PATTERNS = [
 ]
 
 VDR_LABEL_PREFIX = "vdr.fedramp.io/"
-ARCHETYPE_LABEL = "vdr.fedramp.io/asset-archetype"
+SECURITY_IMPACT_PROFILE_LABEL = "vdr.fedramp.io/security-impact-profile"
 
-# Controller kinds that own pods and can carry the archetype label. Standalone
+# Controller kinds that own pods and can carry a security-impact-profile label. Standalone
 # and custom-owned Jobs are included; Jobs whose controller owner is a CronJob
 # are represented by that CronJob.
 CONTROLLER_KINDS = ["deployments", "statefulsets", "daemonsets", "cronjobs"]
@@ -330,11 +330,12 @@ def workload_entry(kind, item):
     ns = meta.get("namespace", "")
     object_labels, template_labels, labels = effective_vdr_labels(kind, item)
     managed_hint = is_cloud_managed(ns)
+    profile = labels.get(SECURITY_IMPACT_PROFILE_LABEL)
     return {
         "namespace": ns,
         "kind": kind,
         "name": meta.get("name", ""),
-        "archetype": labels.get(ARCHETYPE_LABEL),
+        "securityImpactProfile": profile,
         "vdrLabels": labels,
         "workloadObjectVdrLabels": object_labels,
         "podTemplateVdrLabels": template_labels,
@@ -397,12 +398,16 @@ def main():
     namespaces = collect_namespaces(scope, context)
     workloads = collect_workloads(ns_args, context)
 
-    labeled = sum(1 for w in workloads if ARCHETYPE_LABEL in w["vdrLabels"])
+    labeled = sum(
+        1 for w in workloads if SECURITY_IMPACT_PROFILE_LABEL in w["vdrLabels"]
+    )
     object_labeled = sum(
-        1 for w in workloads if ARCHETYPE_LABEL in w["workloadObjectVdrLabels"]
+        1 for w in workloads
+        if SECURITY_IMPACT_PROFILE_LABEL in w["workloadObjectVdrLabels"]
     )
     template_labeled = sum(
-        1 for w in workloads if ARCHETYPE_LABEL in w["podTemplateVdrLabels"]
+        1 for w in workloads
+        if SECURITY_IMPACT_PROFILE_LABEL in w["podTemplateVdrLabels"]
     )
     managed = sum(1 for w in workloads if w["managedNamespaceHint"])
     doc = {
@@ -412,16 +417,10 @@ def main():
         "workloads": workloads,
         "summary": {
             "workloads": len(workloads),
-            "withEffectiveWorkloadArchetypeLabel": labeled,
-            "withoutEffectiveWorkloadArchetypeLabel": len(workloads) - labeled,
-            "withWorkloadObjectArchetypeLabel": object_labeled,
-            "withPodTemplateArchetypeLabel": template_labeled,
-            # Deprecated aliases: "direct" means a label on either the
-            # workload object or pod template, as opposed to a scoring rule.
-            "withDirectArchetypeLabel": labeled,
-            "withoutDirectArchetypeLabel": len(workloads) - labeled,
-            # Deprecated aliases retained for consumers of the v0.1 schema;
-            # an existing label still requires operator reconfirmation.
+            "withEffectiveWorkloadSecurityImpactProfileLabel": labeled,
+            "withoutEffectiveWorkloadSecurityImpactProfileLabel": len(workloads) - labeled,
+            "withWorkloadObjectSecurityImpactProfileLabel": object_labeled,
+            "withPodTemplateSecurityImpactProfileLabel": template_labeled,
             "alreadyLabeled": labeled,
             "needingAttestation": len(workloads) - labeled,
             "inManagedNamespacePatterns": managed,

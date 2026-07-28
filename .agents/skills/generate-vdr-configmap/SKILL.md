@@ -1,6 +1,6 @@
 ---
 name: generate-vdr-configmap
-description: Generate or update the canonical archetype-based trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and compositional CR/IR/AR decision traces; inventory Kubernetes workloads read-only, make evidence-backed best-effort archetype assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, validate complete coverage, and never apply anything.
+description: Generate or update the canonical trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and independently dimensional CR/IR/AR asset security-impact profiles; support direct vectors, compositional decision traces, or named archetypes; inventory Kubernetes workloads read-only, make evidence-backed best-effort assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, validate complete coverage, and never apply anything.
 ---
 
 # Generate VDR ConfigMap
@@ -32,28 +32,44 @@ In commands below, resolve `<skill-dir>` to the directory containing this file.
 - Never retrieve Secret resources or values. Reference names visible in
   workload specs are sufficient evidence; never reproduce credential material.
 
-## Decision-trace schema
+## Security-impact-profile schema
 
-Use one Kubernetes label value with exactly three segments:
+The required runtime input is an independently dimensional CR/IR/AR asset
+security-impact profile. `securityImpactProfile` rules and the
+`vdr.fedramp.io/security-impact-profile` label accept any of these forms:
+
+1. a direct vector such as `cr-h_ir-m_ar-l`;
+2. a compositional decision trace with exactly three segments:
 
 ```text
 <disclosure>.<trusted-change>.<dependency>
 ```
 
-The segments independently determine CR, IR, and AR. Example:
+3. a named entry from the plugin's optional archetype catalog.
+
+Prefer a compositional trace unless the operator chooses another governed
+assignment method. Its segments independently determine CR, IR, and AR while
+preserving the reason chain. Example:
 
 ```text
 privileged-access.foundation-control.recovery-critical -> H/H/H
 ```
 
-Read `references/archetype-guide.md` completely before classifying workloads.
-It defines the allowed reasons, the five-question interview, availability
-calibration, all 27 vector combinations, and classification examples.
+Read `references/archetype-guide.md` completely before assigning profiles. It
+defines direct vectors, the optional archetype system, allowed trace reasons,
+the five-question interview, availability calibration, all 27 vector
+combinations, and examples.
 
-The current plugin treats the dotted string as an opaque archetype name; it
-does not parse the segments. Therefore every exact trace used by a label or
-rule must also appear under `scoring.yaml.archetypes` with its derived vector.
-Keep every value Kubernetes-label-safe and at most 63 characters.
+The plugin parses direct vectors and governed decision traces natively. Do not
+duplicate traces under `scoring.yaml.archetypes`; that catalog is only for
+named archetypes. Keep every label value Kubernetes-label-safe and at most 63
+characters. Emit only `securityImpactProfile` and
+`vdr.fedramp.io/security-impact-profile`; retired `archetype` and `assetValue`
+transports are invalid.
+
+If the CSP uses a scalar asset-value method upstream, translate High, Medium,
+or Low to the equal-dimension direct SIP vector before emission. Record that
+lossy derivation and caution that it removes independent CR/IR/AR reasoning.
 
 ## Workflow
 
@@ -178,12 +194,13 @@ CR/IR/AR value because confidence is low. When several outcomes remain
 credible, choose the strongest credible consequence and state what would
 change the result.
 
-### 5. Assign traces and expose uncertainty
+### 5. Assign profiles and expose uncertainty
 
 For each inventoried workload, show:
 
 - workload or precise workload group;
-- exact three-part trace;
+- exact profile value and derivation method (`direct-vector`,
+  `decision-trace`, or `named-archetype`);
 - derived CR/IR/AR vector;
 - one-line evidence and every assumption;
 - confidence level.
@@ -191,8 +208,8 @@ For each inventoried workload, show:
 Build the assignment plan from the complete inventory, not from ownership or
 whether a workload can retain labels. Use exact `nameRules` by default. A
 narrow, stable name pattern may cover a coherent group only when every current
-match has the same assigned trace. Use a `namespaceRule` only when every
-relevant workload in that namespace has the same assigned trace. Treat
+match has the same assigned profile. Use a `namespaceRule` only when every
+relevant workload in that namespace has the same assigned profile. Treat
 `kindRules` as exceptional; never use a blanket Job fallback unless every Job
 it can match is proven coherent and the operator explicitly accepts it.
 
@@ -202,31 +219,34 @@ defeat exact rules, use a narrow `kindRule` scoped by namespace and name glob.
 Continue suppressing CronJob-owned Jobs because the CronJob is the durable
 scorable workload.
 
-Existing explicit archetype labels have higher runtime precedence. Reconfirm
-them when possible and record whether they agree with the central rule; flag
-unknown or conflicting labels because they can prevent the intended rule from
-resolving. Offer direct labels only when the operator explicitly requests an
-override.
+Existing explicit security-impact-profile labels have higher runtime
+precedence. Reconfirm them when possible and record whether they agree with the
+central rule; flag unknown or conflicting values because they can prevent the
+intended rule from resolving. Offer direct labels only when the operator
+explicitly requests an override.
 
 Do not use `unclassified` merely because payload type, cross-environment
 authority, or business consequence is uncertain. Infer from role and
-structural evidence, choose the strongest credible trace, and mark it medium or
+structural evidence, choose the strongest credible profile, and mark it medium or
 low confidence. Reserve `unclassified` for a technical validation failure that
 must be fixed before handoff, not as a substitute for best-effort generation.
 
-### 6. Compile the scoring catalog
+### 6. Validate profile derivation
 
-Validate assigned traces and generate exact catalog entries with:
+Validate assigned decision traces and mechanically derive their vectors with:
 
 ```bash
 python3 <skill-dir>/scripts/reason_codes.py \
   --cover-27 <assigned-trace>...
 ```
 
-`--cover-27` adds a canonical trace only for vector combinations not already
-represented. Use it when the policy should retain all 27 CR/IR/AR
-permutations. Coverage-only entries are policy capability, not asset
-assignments; do not assign them to a workload without role evidence.
+`--cover-27` reports a canonical trace for vector combinations not already
+represented. Use it only for a coverage review. The output is a validation
+report, not a ConfigMap catalog: the plugin resolves traces natively.
+
+Validate direct vectors with the same independent H/M/L constraints. For a
+named archetype, resolve the exact catalog entry and retain the archetype name
+as the profile value. Record the derivation method in the coverage ledger.
 
 ### 7. Emit the artifacts
 
@@ -241,12 +261,14 @@ Write three required files under `./vdr-configmap-output/`:
    - Quoted `class` and `multiAgency` strings. Put a confidence comment
      immediately above each value, even when it is operator-confirmed; add a
      manual-review comment whenever its confidence is not high.
-   - Exact custom `archetypes` entries and central assignment rules for every
-     inventoried workload, regardless of ownership or confidence.
+   - Central `securityImpactProfile` assignment rules for every inventoried
+     workload, regardless of ownership or confidence. Add an `archetypes`
+     catalog entry only when the CSP intentionally uses a named-archetype
+     system; never add one merely to compile a decision trace.
    - Put a `# confidence: high|medium|low` comment immediately above every
      assignment rule or coherent rule group. Add a nearby
      `# manual-review: ...` comment for every medium- or low-confidence rule,
-     naming the uncertainty that could change its trace. Use plain, sanitized
+     naming the uncertainty that could change its profile. Use plain, sanitized
      evidence; never include credentials or Secret values.
    - Prefer exact `nameRules`; allow narrow stable patterns only for assigned
      coherent groups. Use `namespaceRules` and `kindRules` only under the
@@ -260,7 +282,8 @@ Write three required files under `./vdr-configmap-output/`:
    - Use top-level `context`, `inventoryTotal`, `assignments`,
      `configurationAssumptions`, and `summary` fields.
    - Add one `assignments` entry for every inventoried workload: `namespace`,
-     `kind`, `name`, `trace`, `vector`, `resolutionSource`, status
+     `kind`, `name`, `securityImpactProfile`, `derivationMethod`, `vector`,
+     `resolutionSource`, status
      (`operator-confirmed` or `agent-inferred`), confidence (`high`, `medium`,
      or `low`), `evidence`, `assumptions`, and `manualReview`.
    - Use an empty `manualReview` list only for high-confidence entries. Give
@@ -276,7 +299,7 @@ If the operator explicitly requests direct-label overrides, also emit
 `label-overrides.sh`. Begin it with `FOR OPERATOR REVIEW AND EXECUTION`, state
 that the skill never runs it, and pin every suggestion to the reviewed
 `--context`. Recommend moving accepted overrides into Helm or deployment
-manifests. For CronJobs, put the trace in CronJob `metadata.labels` or
+manifests. For CronJobs, put the profile in CronJob `metadata.labels` or
 `spec.jobTemplate.spec.template.metadata.labels`; the plugin inventories the
 CronJob and suppresses its generated Jobs. Do not rely on
 `spec.jobTemplate.metadata.labels`, which the plugin does not score. Put an
@@ -312,17 +335,21 @@ workload identifier rather than leaking it or targeting a guessed resource.
 Before handoff:
 
 - parse the outer YAML and embedded `scoring.yaml`;
-- verify every trace has three registered reasons and matching H/M/L values;
+- verify every decision trace has three registered reasons and matching H/M/L
+  values, every direct vector has three independent valid levels, and every
+  named archetype resolves to its declared vector;
 - verify every assignment rule or coherent rule group has a confidence comment
   and every non-high-confidence rule has a manual-review comment;
 - verify Class, `multiAgency`, and emitted or provisionally omitted
   internet-accessibility keys have the required confidence and manual-review
   comments;
-- verify all rule and label references are declared exactly;
+- verify all rule and label values resolve exactly without requiring trace
+  duplication in the archetype catalog;
 - verify all 27 vectors are represented when requested;
 - check rule globs, ordering, and duplicate/shadowed entries;
-- resolve every inventory entry using actual precedence: workload label,
-  namespace label, `nameRule`, `kindRule`, `namespaceRule`, then fail-safe;
+- resolve every inventory entry using actual precedence: workload SIP label,
+  namespace SIP label, `nameRule`, `kindRule`, `namespaceRule`, then default and
+  fail-safe;
 - fail validation if any workload resolves to `unclassified`, if an unknown or
   conflicting explicit label blocks its intended rule, or if any inventory
   entry is absent from `assignment-coverage.json`;

@@ -1,6 +1,6 @@
 ---
 name: tag-terraform-vdr-assets
-description: Inventory Terraform for AWS, Azure, and GCP resources addressed by the CIS Foundations Benchmarks; classify only those assets with operator-attested VDR compositional asset-archetypes; add provider-valid labels or tags without applying infrastructure; and optionally place Certification Class and multi-agency scope on Terraform-managed GCP projects or AWS accounts. Use for selective Terraform PAIN metadata, CIS-scoped cloud asset tagging, or review of which IaC resources should remain untagged.
+description: Inventory Terraform for AWS, Azure, and GCP resources addressed by the CIS Foundations Benchmarks; assign operator-attested independently dimensional VDR asset security-impact profiles expressed as direct vectors, compositional decision traces, or named archetypes; add provider-valid SIP labels or tags without applying infrastructure; and optionally place Certification Class and multi-agency scope on Terraform-managed GCP projects or AWS accounts. Use for selective Terraform PAIN metadata, CIS-scoped cloud asset tagging, or review of which IaC resources should remain untagged.
 ---
 
 # Tag Terraform VDR Assets
@@ -21,12 +21,14 @@ VDR PAIN scoring. Resolve `<skill-dir>` to the directory containing this file.
   changes. Never replace a whole metadata map merely to add VDR keys.
 - Do not add an unsupported `labels`, `tags`, or `user_labels` argument. Report
   a benchmark-relevant but untaggable asset as a coverage gap.
-- Require operator confirmation for each archetype and for Class or agency
+- Require operator confirmation for each security-impact profile and for Class or agency
   scope. Existing environment names and labels are evidence, not attestation.
 
 ## Canonical metadata
 
-Use the compositional value:
+Use only the canonical `vdr.fedramp.io/security-impact-profile` transport. The
+value may be a direct vector, a named archetype, or the preferred auditable
+compositional decision trace:
 
 ```text
 <disclosure>.<trusted-change>.<dependency>
@@ -90,7 +92,7 @@ when the CIS recommendation or compliance finding directly evaluates it.
 
 ### 4. Interview, propose, and confirm
 
-Ask no more than the five questions in the archetype guide for an asset or
+Ask no more than the five questions in the profile guide for an asset or
 coherent group. Then show a review table containing:
 
 - Terraform address and CIS section;
@@ -100,8 +102,9 @@ coherent group. Then show a review table containing:
 - confidence and confirmation status.
 
 Leave unresolved candidates unchanged. Do not replace uncertainty with a
-resource-type default. Use `asset-value` only when the operator explicitly
-chooses the simpler H/M/L fallback.
+resource-type default. If the operator uses scalar asset value upstream,
+translate it to an equal-dimension direct SIP vector and explicitly record the
+loss of independent CR/IR/AR reasoning; never emit an asset-value tag.
 
 ### 5. Confirm optional cloud scope
 
@@ -132,7 +135,7 @@ Validate and encode each confirmed metadata set before editing:
 ```bash
 python3 <skill-dir>/scripts/encode_vdr_metadata.py \
   --provider gcp \
-  --archetype '<confirmed-trace>' \
+  --security-impact-profile '<confirmed-profile>' \
   --class C \
   --multi-agency false
 ```
@@ -143,7 +146,7 @@ JSON metadata map; it never edits Terraform.
 
 For module calls, inspect the pinned module variable and its target resource.
 Do not assume an input named `labels` or `tags` exists. When one module call
-creates several independently different assets, do not force one archetype
+creates several independently different assets, do not force one profile
 onto all of them; modify the module interface only with explicit scope and
 approval.
 

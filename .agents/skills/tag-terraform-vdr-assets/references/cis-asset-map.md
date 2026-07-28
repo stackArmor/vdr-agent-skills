@@ -77,18 +77,17 @@ The semantic keys remain the existing VDR keys:
 
 | Meaning | Canonical key | Value |
 |---|---|---|
-| Asset archetype | `vdr.fedramp.io/asset-archetype` | exact three-part dotted trace |
-| Asset value fallback | `vdr.fedramp.io/asset-value` | `High`, `Medium`, or `Low` |
+| Asset security-impact profile | `vdr.fedramp.io/security-impact-profile` | direct CR/IR/AR vector, exact decision trace, or named archetype |
 | Certification Class | `vdr.fedramp.io/class` | `A`, `B`, `C`, or `D` |
 | Agency scope | `vdr.fedramp.io/multi-agency` | `true` or `false` |
 
 Encode only where provider grammar requires it:
 
-| Provider | Key encoding | Archetype value encoding | Class encoding |
+| Provider | Key encoding | SIP value encoding | Class encoding |
 |---|---|---|---|
-| AWS tags | canonical key unchanged | canonical dotted trace | uppercase A-D |
-| Azure tags | replace the `/` with `.`; e.g. `vdr.fedramp.io.asset-archetype` | canonical dotted trace | uppercase A-D |
-| GCP labels | replace every `.`, `/`, and `-` in the key with `_`; e.g. `vdr_fedramp_io_asset_archetype` | replace the two trace separators `.` with `__`; e.g. `regulated-data__authoritative-record__shared-critical-path` | lowercase `a`-`d` |
+| AWS tags | canonical key unchanged | canonical SIP value | uppercase A-D |
+| Azure tags | replace the `/` with `.`; e.g. `vdr.fedramp.io.security-impact-profile` | canonical SIP value | uppercase A-D |
+| GCP labels | replace every `.`, `/`, and `-` in the key with `_`; e.g. `vdr_fedramp_io_security_impact_profile` | replace decision-trace separators `.` with `__`; direct vectors and named archetypes remain unchanged | lowercase `a`-`d` |
 
 GCP reason tokens contain hyphens but no underscores, so `__` is a reversible
 separator for the governed registry. Never replace all hyphens in the value.
@@ -146,7 +145,7 @@ assets:
       version: 5.0.0
       sections: ["1.5", "1.6"]
     metadata:
-      vdr.fedramp.io/asset-archetype: privileged-access.identity-control.change-deferred
+      vdr.fedramp.io/security-impact-profile: privileged-access.identity-control.change-deferred
 ```
 
 Use stable Terraform addresses, canonical keys, and canonical dotted values.

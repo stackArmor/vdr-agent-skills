@@ -1,6 +1,6 @@
 ---
 name: generate-security-objectives
-description: Evaluate a system's security objectives together with the deploying agency's expected use, use NIST SP 800-60/FIPS 199 information types as provisional evidence, apply a transparent FedRAMP Class divergence protocol, and write one validated security-objectives.json artifact containing SSO, ASO, and the optional downstream security-requirements ceiling. Use when an operator needs a risk-profile assessment, federal information-type classification, or ceiling for trivy-plugin-vdr, without generating a ConfigMap, inventorying workloads, or assigning component archetypes.
+description: Evaluate a system's security objectives together with the deploying agency's expected use, use NIST SP 800-60/FIPS 199 information types as provisional evidence, apply a transparent FedRAMP Class divergence protocol, and write one validated security-objectives.json artifact containing SSO, ASO, and the optional downstream security-requirements ceiling. Use when an operator needs a risk-profile assessment, federal information-type classification, or ceiling for trivy-plugin-vdr, without generating a ConfigMap, inventorying workloads, or assigning component security-impact profiles.
 ---
 
 # Generate Security Objectives
@@ -24,7 +24,7 @@ python3 <skill-dir>/scripts/query_nist_800_60.py --id D.14.4 --json
 ## Boundaries
 
 - Produce only `security-objectives.json`. Do not generate or edit a
-  ConfigMap, workload label, archetype, component assignment, coverage ledger,
+  ConfigMap, workload label, security-impact profile, component assignment, coverage ledger,
   or infrastructure file.
 - Do not access Kubernetes or any cloud account. This assessment does not need
   a runtime inventory.
@@ -135,6 +135,6 @@ trivy vdr <mode> --security-requirements-ceiling cr-m_ir-m_ar-l ...
 ```
 
 Use the actual derived wire value. Explain that trivy-plugin-vdr retains the
-asset archetype and only recalculates reported PAIN scores where an archetype
-objective exceeds the declared ceiling. The report displays the normalized
+asset security-impact profile and only recalculates reported PAIN scores where
+a profile objective exceeds the declared ceiling. The report displays the normalized
 ceiling and whether recalculation occurred.

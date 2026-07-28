@@ -1,5 +1,6 @@
 # Fictional example for a FedRAMP Moderate, single-agency Kubernetes estate.
-# The compositional strings are exact decision traces compiled to CR/IR/AR.
+# The compositional strings are exact decision traces resolved natively to
+# independent CR/IR/AR security-impact profiles.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -17,81 +18,14 @@ data:
   multiAgency: "false"
 
   scoring.yaml: |
-    archetypes:
-      # Canonical coverage entries for all 27 vectors.
-      "public-content.advisory-output.deferrable-work":
-        {lens: composite, cr: L, ir: L, ar: L}
-      "public-content.advisory-output.bounded-service":
-        {lens: composite, cr: L, ir: L, ar: M}
-      "public-content.advisory-output.shared-critical-path":
-        {lens: composite, cr: L, ir: L, ar: H}
-      "public-content.bounded-processing.deferrable-work":
-        {lens: composite, cr: L, ir: M, ar: L}
-      "public-content.bounded-processing.bounded-service":
-        {lens: composite, cr: L, ir: M, ar: M}
-      "public-content.bounded-processing.shared-critical-path":
-        {lens: composite, cr: L, ir: M, ar: H}
-      "public-content.authoritative-record.deferrable-work":
-        {lens: composite, cr: L, ir: H, ar: L}
-      "public-content.authoritative-record.bounded-service":
-        {lens: composite, cr: L, ir: H, ar: M}
-      "public-content.authoritative-record.shared-critical-path":
-        {lens: composite, cr: L, ir: H, ar: H}
-      "service-content.advisory-output.deferrable-work":
-        {lens: composite, cr: M, ir: L, ar: L}
-      "service-content.advisory-output.bounded-service":
-        {lens: composite, cr: M, ir: L, ar: M}
-      "service-content.advisory-output.shared-critical-path":
-        {lens: composite, cr: M, ir: L, ar: H}
-      "service-content.bounded-processing.deferrable-work":
-        {lens: composite, cr: M, ir: M, ar: L}
-      "service-content.bounded-processing.bounded-service":
-        {lens: composite, cr: M, ir: M, ar: M}
-      "service-content.bounded-processing.shared-critical-path":
-        {lens: composite, cr: M, ir: M, ar: H}
-      "service-content.authoritative-record.deferrable-work":
-        {lens: composite, cr: M, ir: H, ar: L}
-      "service-content.authoritative-record.bounded-service":
-        {lens: composite, cr: M, ir: H, ar: M}
-      "service-content.authoritative-record.shared-critical-path":
-        {lens: composite, cr: M, ir: H, ar: H}
-      "regulated-data.advisory-output.deferrable-work":
-        {lens: composite, cr: H, ir: L, ar: L}
-      "regulated-data.advisory-output.bounded-service":
-        {lens: composite, cr: H, ir: L, ar: M}
-      "regulated-data.advisory-output.shared-critical-path":
-        {lens: composite, cr: H, ir: L, ar: H}
-      "regulated-data.bounded-processing.deferrable-work":
-        {lens: composite, cr: H, ir: M, ar: L}
-      "regulated-data.bounded-processing.bounded-service":
-        {lens: composite, cr: H, ir: M, ar: M}
-      "regulated-data.bounded-processing.shared-critical-path":
-        {lens: composite, cr: H, ir: M, ar: H}
-      "regulated-data.authoritative-record.deferrable-work":
-        {lens: composite, cr: H, ir: H, ar: L}
-      "regulated-data.authoritative-record.bounded-service":
-        {lens: composite, cr: H, ir: H, ar: M}
-      "regulated-data.authoritative-record.shared-critical-path":
-        {lens: composite, cr: H, ir: H, ar: H}
-
-      # Role-specific aliases used by the rules below.
-      "routing-metadata.foundation-control.shared-critical-path":
-        {lens: composite, cr: L, ir: H, ar: H}
-      "privileged-access.foundation-control.shared-critical-path":
-        {lens: composite, cr: H, ir: H, ar: H}
-      "privileged-access.foundation-control.recovery-critical":
-        {lens: composite, cr: H, ir: H, ar: H}
-      "ops-metadata.record-keeping.operations-support":
-        {lens: composite, cr: M, ir: M, ar: M}
-
     # Confirmed workload rules. Unknown future components stay fail-safe.
     nameRules:
       # confidence: high | cluster DNS role and shared dependency are structurally explicit
-      - {namespace: kube-system, match: cluster-dns, archetype: routing-metadata.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: cluster-dns, securityImpactProfile: routing-metadata.foundation-control.shared-critical-path}
       # confidence: high | privileged node-network role establishes foundation authority
-      - {namespace: kube-system, match: node-network-agent, archetype: privileged-access.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: node-network-agent, securityImpactProfile: privileged-access.foundation-control.shared-critical-path}
       # confidence: high | privileged CSI node role is required for stateful recovery
-      - {namespace: kube-system, match: "persistent-disk-node*", archetype: privileged-access.foundation-control.recovery-critical}
+      - {namespace: kube-system, match: "persistent-disk-node*", securityImpactProfile: privileged-access.foundation-control.recovery-critical}
       # confidence: medium | metrics-only content is inferred from the observed collector role
       # manual-review: verify the collector cannot ingest logs, traces, payload fragments, or credentials
-      - {namespace: monitoring-system, match: "metrics-agent*", archetype: ops-metadata.record-keeping.operations-support}
+      - {namespace: monitoring-system, match: "metrics-agent*", securityImpactProfile: ops-metadata.record-keeping.operations-support}

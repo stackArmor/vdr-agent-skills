@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate compositional VDR reason codes and emit scoring archetypes."""
+"""Validate compositional VDR profile traces and report derived CR/IR/AR."""
 
 import argparse
 import itertools
@@ -104,17 +104,18 @@ def canonical_traces():
 
 def emit_yaml(traces):
     classified = [(trace, classify(trace)) for trace in traces]
-    print("archetypes:")
+    print("validatedProfiles:")
     for trace, (cr, ir, ar) in classified:
-        print('  "%s":' % trace)
-        print("    {lens: composite, cr: %s, ir: %s, ar: %s}" % (cr, ir, ar))
+        print('  - securityImpactProfile: "%s"' % trace)
+        print("    derivationMethod: decision-trace")
+        print("    vector: {cr: %s, ir: %s, ar: %s}" % (cr, ir, ar))
 
 
 def main():
     parser = argparse.ArgumentParser(
         description=(
             "Validate <disclosure>.<trusted-change>.<outage> decision traces "
-            "and emit trivy-plugin-vdr archetype YAML."
+            "and report their independently derived CR/IR/AR profiles."
         )
     )
     parser.add_argument(
