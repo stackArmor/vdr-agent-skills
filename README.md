@@ -53,12 +53,13 @@ The ceiling may be copied into `vdr-fedramp` as
 `securityRequirementsCeiling` or passed to trivy-plugin-vdr with
 `--security-requirements-ceiling`. Using it is optional.
 
-### `generate-vdr-configmap` → the archetype-based `vdr-fedramp` ConfigMap
+### `generate-vdr-configmap` → the SIP-based `vdr-fedramp` ConfigMap
 
 Interviews the operator to capture the canonical scoring attestations: the
 FedRAMP **Certification Class**, **agency scope** (single/multi-agency), and
-per-workload compositional archetype decision traces producing deterministic
-CR/IR/AR vectors. Emits a central `vdr-fedramp` ConfigMap rule for every
+per-workload security-impact profiles expressed as direct vectors,
+compositional decision traces, or named archetypes. Emits a central
+`vdr-fedramp` ConfigMap rule for every
 workload plus an assignment-coverage ledger with confidence and manual-review
 reporting.
 
@@ -126,9 +127,9 @@ discovery path differs.
 Both ConfigMaps are read in-cluster by
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr):
 `vdr-fedramp` drives PAIN scoring and `VDR-TFR-PVR` remediation deadlines
-(Certification Class, agency scope, and archetype rules). An optional
+(Certification Class, agency scope, and security-impact-profile rules). An optional
 `securityRequirementsCeiling` in that ConfigMap—or the corresponding runtime
-flag—caps archetype CR/IR/AR values only when recalculating reported PAIN
+flag—caps profile CR/IR/AR values only when recalculating reported PAIN
 scores. Its absence is valid and silent. The beta
 `vdr-dataflow` workflow can supply experimental dataflow evidence for
 internet-reachability determination, but may be changed or deprecated. See

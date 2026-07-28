@@ -16,6 +16,11 @@ edges:
     to: {namespace: webapp, service: auth-gateway, port: 9443, protocol: https}
     evidence: ["operator: worker only calls the SSO endpoint on the public host"]
     internetTransit: true
+suppressEdges:
+  # operator confirmed this base URL constructs links and does not initiate calls
+  - from: {namespace: webapp, kind: deployment, name: worker}
+    internetTransit: true
+    reason: "reject conservative hairpin fan-out before adding the precise edge above"
 resolveUnresolved:
   # host referenced in config that lives in a namespace outside the scan scope
   - host: search-index

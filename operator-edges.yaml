@@ -1,0 +1,48 @@
+# Operator-reviewed additions and resolutions for the rally namespace.
+# Topology completeness remains false until the exposure and hairpin review closes.
+attestation:
+  declaredTopologyComplete: false
+  date: "2026-07-28"
+  note: "Review in progress. All 11 detected internet-facing workloads are expected. barman-backup and voltron-db-utilities use postgres-ro; burro serves static assets; postgres initiates no outbound payload paths. Broad public URL values are link/callback metadata rather than payload calls and must not remain as hairpin edges."
+edges:
+  - from: {namespace: rally, kind: cronjob, name: barman-backup}
+    to: {namespace: rally, service: postgres-ro, port: 5432, protocol: postgres}
+    evidence: ["operator: hardcoded database destination is believed to be postgres-ro"]
+  - from: {namespace: rally, kind: cronjob, name: voltron-db-utilities}
+    to: {namespace: rally, service: postgres-ro, port: 5432, protocol: postgres}
+    evidence: ["operator: database destination is probably postgres-ro"]
+suppressEdges:
+  - from: {namespace: rally, kind: deployment, name: fortune}
+    internetTransit: true
+    reason: "public URL configuration is internal link/callback metadata, not an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: garthe}
+    internetTransit: true
+    reason: "BASE_URL and ALM_URL configuration does not initiate an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: jgopher}
+    internetTransit: true
+    reason: "public URL configuration is internal link/callback metadata, not an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: pigeon}
+    internetTransit: true
+    reason: "BASE_URL, ALM_URL, and ZUUL callback configuration does not initiate an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: proof}
+    internetTransit: true
+    reason: "public URL configuration is internal link/callback metadata, not an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: teller}
+    internetTransit: true
+    reason: "public URL configuration is internal link/callback metadata, not an outbound payload call"
+  - from: {namespace: rally, kind: deployment, name: zuul}
+    internetTransit: true
+    reason: "ZUUL and SAML recipient URLs are callback/identity metadata, not outbound payload calls"
+  - from: {namespace: rally, kind: statefulset, name: kafka}
+    internetTransit: true
+    reason: "public base URL is internal link metadata, not an outbound payload call"
+  - from: {namespace: rally, kind: statefulset, name: rally-alm}
+    internetTransit: true
+    reason: "apparent self-hairpin is configuration metadata, not an outbound round trip"
+  - from: {namespace: rally, kind: statefulset, name: schema-registry}
+    internetTransit: true
+    reason: "public base URL is internal link metadata, not an outbound payload call"
+resolveUnresolved:
+  - host: elasticsearch
+    external: true
+    note: "dead or intentionally ignored configuration; operator instructed capture to ignore it"

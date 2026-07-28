@@ -235,6 +235,10 @@ edges:
     to: {namespace: webapp, service: postgres-rw, port: 5432, protocol: postgres}
     evidence: ["operator: backup job streams WAL from postgres-rw"]
     # internetTransit: true      # optional, defaults false
+suppressEdges:
+  - from: {namespace: webapp, kind: deployment, name: worker}
+    internetTransit: true
+    reason: "configured public base URL constructs links; it does not initiate payload calls"
 resolveUnresolved:
   - host: search-index           # map an unresolved host to a real Service...
     to: {namespace: search, service: elasticsearch, port: 9200}
@@ -256,6 +260,19 @@ brokerCandidates:                # passed through verbatim into the ConfigMap
     verify: "which role holds sqs:SendMessage vs sqs:ReceiveMessage on ingest-queue"
     status: unverified
 ```
+
+`suppressEdges` removes discovered edges that the operator rejects during review.
+Suppressions run before `edges` are added, so they cannot remove an
+operator-declared edge from the same merge file. Every suppression requires:
+
+- an exact `from` workload (`namespace`, `kind`, and `name`);
+- a non-empty `reason`; and
+- at least one narrowing selector: exact/partial `to`, boolean
+  `internetTransit`, exact `source`, or an `evidenceContains` substring.
+
+The optional `to` selector requires `namespace` and `service`; `port` and
+`protocol` further narrow it. Invalid suppression rules stop generation instead of
+silently producing an inaccurate map. Rules that match no edge produce a warning.
 
 Plain YAML subset: block mappings/sequences, inline `{}`/`[]` flow values, quoted
 scalars, `#` comments. No anchors, no multi-line block scalars (PyYAML is used when
