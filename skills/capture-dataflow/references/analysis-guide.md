@@ -138,8 +138,13 @@ routed backend(s) and are marked `internetTransit`. Review them because:
 
 - **Pathless base URLs fan out.** A bare `https://portal.example.gov` fans out to
   every backend routed under that host (conservative). Ask which backend(s) the
-  consumer actually calls and replace the fan-out with precise `operator-edges.yaml`
-  entries if the user knows; keep the fan-out if they don't.
+  consumer actually calls. Add a `suppressEdges` rule for the rejected fan-out and
+  precise `edges` entries for real calls if the user knows; keep the fan-out if
+  they don't.
+- **Link/callback metadata is not a payload edge.** When the operator confirms a
+  configured public URL only constructs links, advertises an origin, or identifies
+  an inbound callback and does not initiate a request, suppress the matching edge
+  with an auditable `reason`.
 - **Self-loops are real.** A workload configured with its own public URL genuinely
   round-trips through the edge; keep the edge.
 - **Split-horizon DNS.** If the "public" hostname actually resolves in-cluster to an

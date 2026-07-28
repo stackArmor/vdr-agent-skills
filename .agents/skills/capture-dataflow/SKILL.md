@@ -37,7 +37,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/scripts/capture_dataflow.p
 ```
 Optional enrichment inputs (never required): `--flows-file <hubble.jsonl>`,
 `--mesh-metrics-file <metrics.txt>`. `--all-stages` forces every stage; `--help`
-for the rest. Read `vdr-dataflow-output/bundle.json`.
+for the rest. `--compact-exposure` keeps the full exposure evidence in the bundle
+and ConfigMap but collapses ingress/gateway/LB path nodes into direct
+Internet-to-workload links in Mermaid diagrams. Read
+`vdr-dataflow-output/bundle.json`.
 
 ### 3. Agentic analysis (required)
 Follow `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/references/analysis-guide.md`

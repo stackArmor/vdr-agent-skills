@@ -43,7 +43,7 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
-VERSION = "0.2.0"
+VERSION = "0.2.2"
 GENERATOR = f"capture-dataflow/{VERSION} (trivy-plugin-vdr-skills)"
 SCHEMA_VERSION = "v1alpha1"
 CONFIGMAP_NAME = "vdr-dataflow"
@@ -1310,6 +1310,91 @@ def stage4_declared_config(cap):
 # Merge (operator-declared edges + attestation)
 # ---------------------------------------------------------------------------
 
+def _edge_matches_suppression(edge, rule):
+    """Return True when an edge matches one validated operator suppression rule."""
+    frm = rule["from"]
+    edge_from = edge["from"]
+    if any(edge_from.get(k) != frm[k] for k in ("namespace", "kind", "name")):
+        return False
+
+    to = rule.get("to")
+    if to:
+        edge_to = edge["to"]
+        if any(edge_to.get(k) != v for k, v in to.items()):
+            return False
+    if "internetTransit" in rule and edge.get("internetTransit") is not rule["internetTransit"]:
+        return False
+    if "source" in rule and rule["source"] not in edge.get("sources", []):
+        return False
+    if "evidenceContains" in rule:
+        needle = rule["evidenceContains"]
+        if not any(needle in evidence for evidence in edge.get("evidence", [])):
+            return False
+    return True
+
+
+def suppress_operator_edges(cap, rules):
+    """Remove discovered edges explicitly rejected during operator review.
+
+    Suppressions run before operator-declared additions so a broad rule cannot
+    remove an edge that the operator adds in the same merge file.
+    """
+    suppressed = 0
+    for index, rule in enumerate(rules or [], start=1):
+        if not isinstance(rule, dict):
+            raise ValueError(f"suppressEdges[{index}] must be a mapping")
+        frm = rule.get("from") or {}
+        if not all(frm.get(k) for k in ("namespace", "kind", "name")):
+            raise ValueError(
+                f"suppressEdges[{index}].from requires namespace, kind, and name"
+            )
+        rule["from"] = {
+            "namespace": str(frm["namespace"]),
+            "kind": str(frm["kind"]).lower(),
+            "name": str(frm["name"]),
+        }
+        if not str(rule.get("reason") or "").strip():
+            raise ValueError(f"suppressEdges[{index}].reason is required")
+
+        selectors = ("to", "internetTransit", "source", "evidenceContains")
+        if not any(k in rule for k in selectors):
+            raise ValueError(
+                f"suppressEdges[{index}] requires at least one edge selector: "
+                "to, internetTransit, source, or evidenceContains"
+            )
+        if "internetTransit" in rule and not isinstance(rule["internetTransit"], bool):
+            raise ValueError(f"suppressEdges[{index}].internetTransit must be boolean")
+        if "source" in rule and not str(rule["source"]).strip():
+            raise ValueError(f"suppressEdges[{index}].source must be non-empty")
+        if "evidenceContains" in rule and not str(rule["evidenceContains"]).strip():
+            raise ValueError(f"suppressEdges[{index}].evidenceContains must be non-empty")
+
+        to = rule.get("to")
+        if to is not None:
+            if not isinstance(to, dict) or not all(to.get(k) for k in ("namespace", "service")):
+                raise ValueError(
+                    f"suppressEdges[{index}].to requires namespace and service"
+                )
+            allowed = {"namespace", "service", "port", "protocol"}
+            unknown = set(to) - allowed
+            if unknown:
+                raise ValueError(
+                    f"suppressEdges[{index}].to contains unsupported fields: "
+                    f"{', '.join(sorted(unknown))}"
+                )
+
+        matched = [
+            key for key, edge in cap.edges.items()
+            if _edge_matches_suppression(edge, rule)
+        ]
+        if not matched:
+            log(f"  ! merge: suppressEdges[{index}] matched no discovered edge")
+        for key in matched:
+            del cap.edges[key]
+            suppressed += 1
+    return suppressed
+
+
 def apply_merge(cap, merge_path, attestation):
     with open(merge_path, "r", encoding="utf-8") as fh:
         doc = parse_simple_yaml(fh.read()) or {}
@@ -1322,6 +1407,8 @@ def apply_merge(cap, merge_path, attestation):
     for k in ("attestedBy", "date", "note"):
         if k in att:
             attestation[k] = str(att[k])  # PyYAML may parse dates as datetime.date
+
+    suppressed = suppress_operator_edges(cap, doc.get("suppressEdges") or [])
 
     count = 0
     for e in doc.get("edges") or []:
@@ -1383,7 +1470,8 @@ def apply_merge(cap, merge_path, attestation):
 
     verdict = "complete" if attestation.get("declaredTopologyComplete") else "partial"
     cap.record_stage(5, "operatorDeclared", count,
-                     f"{count} operator edges merged; {resolved} unresolved hosts resolved; "
+                     f"{count} operator edges merged; {suppressed} discovered edges suppressed; "
+                     f"{resolved} unresolved hosts resolved; "
                      f"{candidates} broker candidates recorded; "
                      f"declaredTopologyComplete={bool(attestation.get('declaredTopologyComplete'))}",
                      verdict)
@@ -1516,7 +1604,7 @@ def _mermaid_id(prefix, label, registry):
     return node_id
 
 
-def write_mermaid(cap, doc, generated, out_dir):
+def write_mermaid(cap, doc, generated, out_dir, compact_exposure=False):
     diagrams_dir = os.path.join(out_dir, "diagrams")
     os.makedirs(diagrams_dir, exist_ok=True)
     exposed_ns = sorted({e["namespace"] for e in doc["exposedWorkloads"]})
@@ -1568,10 +1656,14 @@ def write_mermaid(cap, doc, generated, out_dir):
                 pass  # first definition wins; port variance noted via edge labels
             return nid
 
-        # Edge zone: internet -> ingress/gateway/LB -> exposed workload
+        # Exposure: optionally collapse ingress/gateway/LB detail into one direct
+        # internet edge per workload for a smaller operator-review diagram.
         edge_zone_nodes = []
         for ew in ns_exposed:
             wnid = workload_node(ew["namespace"], ew["kind"], ew["name"])
+            if compact_exposure:
+                links.append((f"  internet --> {wnid}", None))
+                continue
             for via in ew["via"]:
                 hosts = ", ".join(ew["publicHosts"][:2]) or ""
                 label = via + (f"<br/>{hosts}" if hosts else "")
@@ -1692,6 +1784,8 @@ def parse_args(argv):
                    help="run every stage even after a stage reports a complete map")
     p.add_argument("--merge", default=None, metavar="OPERATOR_EDGES_YAML",
                    help="merge operator-declared edges + attestation (source: operatorDeclared)")
+    p.add_argument("--compact-exposure", action="store_true",
+                   help="collapse ingress/gateway/LB path nodes into direct Internet-to-workload links in Mermaid")
     p.add_argument("--output-dir", default="./vdr-dataflow-output")
     p.add_argument("--emit", choices=("bundle", "configmap", "mermaid", "all"), default="all")
     return p.parse_args(argv)
@@ -1773,7 +1867,9 @@ def main(argv=None):
     if args.emit in ("configmap", "all"):
         written.append(write_configmap(doc, out_dir))
     if args.emit in ("mermaid", "all"):
-        written += write_mermaid(cap, doc, generated, out_dir)
+        written += write_mermaid(
+            cap, doc, generated, out_dir, compact_exposure=args.compact_exposure
+        )
 
     log(f"\nedges: {len(doc['edges'])} | exposed workloads: {len(doc['exposedWorkloads'])} | "
         f"unresolved hosts: {len(doc['unresolved'])}")
