@@ -77,10 +77,15 @@ def decode_vdr_tags(provider, tags):
 
 
 def summarize_tags(resources):
-    """Roll canonical vdrTags across resources into count/value histograms."""
+    """Roll raw provider tags/labels across resources into count/value histograms.
+
+    Summarizes the operator's existing tag vocabulary (env, data-class, owner,
+    ...) so downstream tagRule proposals can key off coherent taxonomies. VDR
+    override provenance lives in vdrTags and is reported separately.
+    """
     summary = {}
     for resource in resources:
-        for key, value in resource.get("vdrTags", {}).items():
+        for key, value in resource.get("tags", {}).items():
             entry = summary.setdefault(key, {"count": 0, "values": {}})
             entry["count"] += 1
             entry["values"][value] = entry["values"].get(value, 0) + 1
