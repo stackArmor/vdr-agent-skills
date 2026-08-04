@@ -63,6 +63,25 @@ compositional decision traces, or named archetypes. Emits a central
 workload plus an assignment-coverage ledger with confidence and manual-review
 reporting.
 
+### `generate-cloud-vdr-config` → the central vdr-cloud.yaml (proposed contract)
+
+Extends the central-assignment model to **non-Kubernetes cloud resources**. It
+discovers CIS Foundations-addressed GCP and AWS resource families (object
+storage, VMs, managed SQL, BigQuery datasets, and the rest) with read-only
+`gcloud`/`aws` CLIs, interviews the operator, and emits a single multi-scope
+`vdr-cloud.yaml` (`CloudResourceScoringConfig`) plus an inventory baseline and a
+coverage ledger. Resources are matched by **name, tag, network, or type rules**
+with family-tier precedence, or by whole account/project defaults; each resolves
+FedRAMP Class, agency scope, and a CR/IR/AR security-impact profile
+independently down the chain. This document becomes the **primary** assignment
+surface, so per-resource `vdr.fedramp.io/*` tags are demoted to
+exceptions/overrides. Provider-managed resources (staging buckets, template
+stores, CDK assets, ...) are matched against a governed catalog and
+**materialized as reviewable medium-confidence rules**, never assumed silently.
+Like the `tag-terraform-vdr-assets` sidecar, `vdr-cloud.yaml` is a **proposed
+integration contract — `trivy-plugin-vdr` does not consume it today** — and
+every artifact and handoff says so.
+
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 
 Inventories AWS, Azure, and GCP Terraform and allows only asset families
@@ -99,6 +118,7 @@ discovery path differs.
 | Tool | Notes |
 |------|-------|
 | `kubectl` (authenticated) | For `generate-vdr-configmap` and `capture-dataflow`; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `gcloud` / `aws` CLIs (authenticated, read-only) | For `generate-cloud-vdr-config` only. Read-only access is sufficient — `list`/`describe`/`get` and `sts get-caller-identity`; the skill never runs a mutating verb or applies anything to a cloud account. |
 | `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
 | `python3` (>= 3.8) | For the inventory/capture scripts. Standard library only — no `pip install`. |
 
