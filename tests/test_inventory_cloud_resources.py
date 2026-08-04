@@ -163,3 +163,61 @@ class GcpInventoryTests(unittest.TestCase):
         self.assertEqual(1, doc["summary"]["scopeCount"])
         self.assertEqual(1, doc["summary"]["resourceCount"])
         self.assertEqual({"t": 1}, doc["summary"]["byType"])
+
+
+class AwsInventoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_script("inventory_cloud_resources")
+        cls.patterns = cls.mod.load_patterns(
+            SKILL / "references" / "managed-resource-patterns.json")
+
+    def make_runner(self):
+        return fake_runner([
+            ("sts get-caller-identity",
+             {"Account": "123456789012",
+              "Arn": "arn:aws:iam::123456789012:user/ops"}),
+            ("s3api list-buckets",
+             {"Buckets": [{"Name": "cf-templates-9x-us-east-1"},
+                           {"Name": "acme-prod-data"}]}),
+            ("s3api get-bucket-tagging",
+             {"TagSet": [{"Key": "vdr.fedramp.io/multi-agency",
+                           "Value": "true"}]}),
+            ("s3api get-bucket-location", {"LocationConstraint": None}),
+            ("ec2 describe-instances",
+             {"Reservations": [{"Instances": [
+                 {"InstanceId": "i-0abc", "VpcId": "vpc-11",
+                  "SubnetId": "subnet-22",
+                  "Placement": {"AvailabilityZone": "us-east-1a"},
+                  "Tags": [{"Key": "Name", "Value": "web-1"},
+                            {"Key": "aws:cloudformation:stack-name",
+                             "Value": "web"}]}]}]}),
+            ("rds describe-db-instances",
+             {"DBInstances": [{"DBInstanceIdentifier": "prod-db",
+                                "DBSubnetGroup": {"VpcId": "vpc-11"},
+                                "AvailabilityZone": "us-east-1a",
+                                "TagList": [{"Key": "env", "Value": "prod"}]}]}),
+        ])
+
+    def test_aws_inventory(self):
+        runner = self.make_runner()
+        scope = self.mod.inventory_aws("prod", ["us-east-1"],
+                                       self.patterns, runner=runner)
+        self.assertEqual("aws", scope["provider"])
+        self.assertEqual("123456789012", scope["account"])
+        self.assertEqual("prod", scope["provenance"]["profile"])
+        by_id = {r["identifier"]: r for r in scope["resources"]}
+        self.assertEqual(["aws-cloudformation-templates"],
+                         by_id["cf-templates-9x-us-east-1"]["builtinPatterns"])
+        self.assertEqual({"vdr.fedramp.io/multi-agency": "true"},
+                         by_id["acme-prod-data"]["vdrTags"])
+        ec2 = by_id["i-0abc"]
+        self.assertEqual("vpc-11", ec2["network"])
+        self.assertEqual("subnet-22", ec2["subnet"])
+        self.assertIn("aws-cloudformation-managed", ec2["builtinPatterns"])
+        self.assertEqual("AWS::RDS::DBInstance", by_id["prod-db"]["type"])
+        # every aws call pins the confirmed profile
+        for call in runner.calls:
+            if call and call[0] == "aws":
+                self.assertIn("--profile", call)
+                self.assertIn("prod", call)

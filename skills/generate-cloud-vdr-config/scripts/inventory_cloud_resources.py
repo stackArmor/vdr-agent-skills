@@ -103,7 +103,7 @@ def _last_segment(value):
 
 
 def _build_resource(rtype, identifier, region, tags, network, subnet,
-                    provider_patterns):
+                    provider_patterns, provider="gcp"):
     resource = {
         "type": rtype,
         "identifier": identifier,
@@ -112,7 +112,7 @@ def _build_resource(rtype, identifier, region, tags, network, subnet,
         "subnet": subnet,
         "tags": tags,
     }
-    resource["vdrTags"] = decode_vdr_tags("gcp", tags)
+    resource["vdrTags"] = decode_vdr_tags(provider, tags)
     resource["builtinPatterns"] = match_patterns(resource, provider_patterns)
     return resource
 
@@ -269,6 +269,110 @@ def inventory_gcp(project, patterns, runner=run_command, use_asset_api=True):
     }
 
 
+def _aws_base_args(profile):
+    return ["aws", "--profile", profile]
+
+
+def _aws_json(runner, service_args, profile, region=None):
+    args = _aws_base_args(profile) + service_args
+    if region:
+        args += ["--region", region]
+    args += ["--output", "json"]
+    return _load_json(runner(args))
+
+
+def _kv_list_to_dict(pairs):
+    return {pair.get("Key"): pair.get("Value") for pair in (pairs or [])}
+
+
+def _aws_bucket_tags(runner, profile, bucket, warnings):
+    try:
+        tagging = _aws_json(runner, ["s3api", "get-bucket-tagging",
+                                     "--bucket", bucket], profile)
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append(
+            "Tags for bucket %s were not read: %s" % (bucket, first_line))
+        return {}
+    return _kv_list_to_dict(tagging.get("TagSet"))
+
+
+def _aws_bucket_region(runner, profile, bucket, warnings):
+    try:
+        location = _aws_json(runner, ["s3api", "get-bucket-location",
+                                      "--bucket", bucket], profile)
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append(
+            "Region for bucket %s was not read; assuming us-east-1: %s"
+            % (bucket, first_line))
+        return "us-east-1"
+    return location.get("LocationConstraint") or "us-east-1"
+
+
+def _aws_s3_inventory(runner, profile, provider_patterns, warnings):
+    resources = []
+    listing = _aws_json(runner, ["s3api", "list-buckets"], profile)
+    for bucket in listing.get("Buckets") or []:
+        name = bucket.get("Name")
+        tags = _aws_bucket_tags(runner, profile, name, warnings)
+        region = _aws_bucket_region(runner, profile, name, warnings)
+        resources.append(_build_resource(
+            "AWS::S3::Bucket", name, region, tags, None, None,
+            provider_patterns, provider="aws"))
+    return resources
+
+
+def _aws_region_inventory(runner, profile, region, provider_patterns):
+    resources = []
+    ec2 = _aws_json(runner, ["ec2", "describe-instances"], profile, region)
+    for reservation in ec2.get("Reservations") or []:
+        for instance in reservation.get("Instances") or []:
+            resources.append(_build_resource(
+                "AWS::EC2::Instance", instance.get("InstanceId"), region,
+                _kv_list_to_dict(instance.get("Tags")),
+                instance.get("VpcId"), instance.get("SubnetId"),
+                provider_patterns, provider="aws"))
+
+    rds = _aws_json(runner, ["rds", "describe-db-instances"], profile, region)
+    for db in rds.get("DBInstances") or []:
+        network = (db.get("DBSubnetGroup") or {}).get("VpcId")
+        resources.append(_build_resource(
+            "AWS::RDS::DBInstance", db.get("DBInstanceIdentifier"), region,
+            _kv_list_to_dict(db.get("TagList")), network, None,
+            provider_patterns, provider="aws"))
+    return resources
+
+
+def inventory_aws(profile, regions, patterns, runner=run_command):
+    provider_patterns = [p for p in patterns if p.get("provider") == "aws"]
+    warnings = []
+
+    identity = _aws_json(runner, ["sts", "get-caller-identity"], profile)
+    account = identity.get("Account")
+
+    resources = _aws_s3_inventory(runner, profile, provider_patterns, warnings)
+    for region in regions:
+        resources.extend(_aws_region_inventory(
+            runner, profile, region, provider_patterns))
+
+    provenance = {
+        "inventorySource": "per-service",
+        "callerIdentity": identity.get("Arn"),
+        "profile": profile,
+        "resolvedScope": account,
+    }
+
+    return {
+        "provider": "aws",
+        "account": account,
+        "provenance": provenance,
+        "resources": resources,
+        "tagSummary": summarize_tags(resources),
+        "warnings": warnings,
+    }
+
+
 def merge_scopes(scope_docs):
     resource_count = 0
     by_type = {}
@@ -312,13 +416,19 @@ def main(argv=None):
     else:
         if not args.provider:
             parser.error("--provider is required unless --merge is given")
-        if args.provider == "aws":
-            parser.error("AWS inventory is not yet supported; use --provider gcp")
-        if not args.project:
-            parser.error("--project is required for --provider gcp")
         patterns = load_patterns(Path(args.patterns))
-        document = inventory_gcp(args.project, patterns,
-                                 use_asset_api=not args.no_asset_api)
+        if args.provider == "aws":
+            if not args.profile:
+                parser.error("--profile is required for --provider aws")
+            if not args.region:
+                parser.error("at least one --region is required for "
+                             "--provider aws")
+            document = inventory_aws(args.profile, args.region, patterns)
+        else:
+            if not args.project:
+                parser.error("--project is required for --provider gcp")
+            document = inventory_gcp(args.project, patterns,
+                                     use_asset_api=not args.no_asset_api)
 
     rendered = json.dumps(document, indent=2)
     if args.output:
