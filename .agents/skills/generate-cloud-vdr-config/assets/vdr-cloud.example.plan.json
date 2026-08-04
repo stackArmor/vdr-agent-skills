@@ -1,0 +1,80 @@
+{
+  "defaults": {
+    "class": {"value": "C", "confidence": "high", "evidence": "operator-confirmed FedRAMP Moderate authorization", "manualReview": []},
+    "multiAgency": {"value": "false", "confidence": "high", "evidence": "operator-confirmed single-agency deployment", "manualReview": []},
+    "securityImpactProfile": null
+  },
+  "archetypes": {},
+  "scopes": [
+    {
+      "provider": "gcp",
+      "project": "aurora-health-prod",
+      "class": {"value": "C", "confidence": "high", "evidence": "operator-confirmed FedRAMP Moderate authorization", "manualReview": []},
+      "multiAgency": {"value": "false", "confidence": "high", "evidence": "operator-confirmed single-agency deployment", "manualReview": []},
+      "securityImpactProfile": null,
+      "nameRules": [
+        {"type": "storage.googleapis.com/Bucket", "match": "aurora-health-prod-patient-records",
+         "matchTags": null, "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "regulated-data.record-keeping.mission-essential",
+         "multiAgency": null, "confidence": "high", "builtinPattern": null,
+         "evidence": "operator attested customer PHI store", "manualReview": []},
+        {"type": "storage.googleapis.com/Bucket", "match": "gcf-sources-*",
+         "matchTags": null, "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "service-content.disposable-state.deferrable-work",
+         "multiAgency": null, "confidence": "medium", "builtinPattern": "gcp-cloudfunctions-staging",
+         "evidence": "provider-created transient artifact store; contents are deploy-time only and overwritten on update",
+         "manualReview": [
+           "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+           "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"]}
+      ],
+      "tagRules": [
+        {"type": null, "match": null, "matchTags": {"data-class": "phi"},
+         "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "regulated-data.record-keeping.mission-essential",
+         "multiAgency": null, "confidence": "high", "builtinPattern": null,
+         "evidence": "operator-governed data classification taxonomy", "manualReview": []}
+      ],
+      "networkRules": [
+        {"type": "sqladmin.googleapis.com/Instance", "match": null, "matchTags": null,
+         "network": "prod-vpc", "subnet": null, "region": null,
+         "securityImpactProfile": "regulated-data.authoritative-record.mission-essential",
+         "multiAgency": null, "confidence": "medium", "builtinPattern": null,
+         "evidence": "prod VPC hosts only the core service path",
+         "manualReview": ["verify no ancillary workloads share prod-vpc"]}
+      ],
+      "typeRules": [
+        {"type": "compute.googleapis.com/Instance", "match": null, "matchTags": null,
+         "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "service-content.record-keeping.operations-support",
+         "multiAgency": null, "confidence": "medium", "builtinPattern": null,
+         "evidence": "fleet role inferred from instance templates",
+         "manualReview": ["confirm no VM holds regulated payload data locally"]}
+      ]
+    },
+    {
+      "provider": "aws",
+      "account": "210987654321",
+      "class": {"value": "C", "confidence": "high", "evidence": "operator-confirmed FedRAMP Moderate authorization", "manualReview": []},
+      "multiAgency": {"value": "false", "confidence": "high", "evidence": "operator-confirmed single-agency deployment", "manualReview": []},
+      "securityImpactProfile": null,
+      "nameRules": [
+        {"type": "AWS::S3::Bucket", "match": "aurora-claims-archive",
+         "matchTags": null, "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "regulated-data.record-keeping.mission-essential",
+         "multiAgency": null, "confidence": "high", "builtinPattern": null,
+         "evidence": "operator attested claims record archive", "manualReview": []},
+        {"type": "AWS::S3::Bucket", "match": "cf-templates-*",
+         "matchTags": null, "network": null, "subnet": null, "region": null,
+         "securityImpactProfile": "service-content.disposable-state.deferrable-work",
+         "multiAgency": null, "confidence": "medium", "builtinPattern": "aws-cloudformation-templates",
+         "evidence": "provider-created stack-template store; contents are deploy-time only",
+         "manualReview": [
+           "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+           "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"]}
+      ],
+      "tagRules": [],
+      "networkRules": [],
+      "typeRules": []
+    }
+  ]
+}

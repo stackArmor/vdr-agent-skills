@@ -1,0 +1,55 @@
+# vdr-cloud.yaml — FICTIONAL EXAMPLE. The scopes, projects, accounts, resource
+# names, and profiles below are invented for documentation only and describe no
+# real system. The body is the exact output of render_cloud_config.py; regenerate
+# it from the committed plan with:
+#   python3 skills/generate-cloud-vdr-config/scripts/render_cloud_config.py \
+#     --plan skills/generate-cloud-vdr-config/assets/vdr-cloud.example.plan.json
+# Central cloud-resource scoring assignment surface for trivy-plugin-vdr.
+# PROPOSED INTEGRATION CONTRACT: no current scanner consumes this document.
+apiVersion: vdr.fedramp.io/v1alpha1
+kind: CloudResourceScoringConfig
+defaults:
+  # confidence: high | operator-confirmed FedRAMP Moderate authorization
+  class: "C"
+  # confidence: high | operator-confirmed single-agency deployment
+  multiAgency: "false"
+scopes:
+  - provider: gcp
+    project: aurora-health-prod
+    # confidence: high | operator-confirmed FedRAMP Moderate authorization
+    class: "C"
+    # confidence: high | operator-confirmed single-agency deployment
+    multiAgency: "false"
+    nameRules:
+      # confidence: high | operator attested customer PHI store
+      - {type: storage.googleapis.com/Bucket, match: aurora-health-prod-patient-records, securityImpactProfile: regulated-data.record-keeping.mission-essential}
+      # builtin-pattern: gcp-cloudfunctions-staging
+      # confidence: medium | provider-created transient artifact store; contents are deploy-time only and overwritten on update
+      # manual-review: attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material
+      # manual-review: confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)
+      - {type: storage.googleapis.com/Bucket, match: "gcf-sources-*", securityImpactProfile: service-content.disposable-state.deferrable-work}
+    tagRules:
+      # confidence: high | operator-governed data classification taxonomy
+      - {matchTags: {data-class: "phi"}, securityImpactProfile: regulated-data.record-keeping.mission-essential}
+    networkRules:
+      # confidence: medium | prod VPC hosts only the core service path
+      # manual-review: verify no ancillary workloads share prod-vpc
+      - {type: sqladmin.googleapis.com/Instance, network: prod-vpc, securityImpactProfile: regulated-data.authoritative-record.mission-essential}
+    typeRules:
+      # confidence: medium | fleet role inferred from instance templates
+      # manual-review: confirm no VM holds regulated payload data locally
+      - {type: compute.googleapis.com/Instance, securityImpactProfile: service-content.record-keeping.operations-support}
+  - provider: aws
+    account: "210987654321"
+    # confidence: high | operator-confirmed FedRAMP Moderate authorization
+    class: "C"
+    # confidence: high | operator-confirmed single-agency deployment
+    multiAgency: "false"
+    nameRules:
+      # confidence: high | operator attested claims record archive
+      - {type: AWS::S3::Bucket, match: aurora-claims-archive, securityImpactProfile: regulated-data.record-keeping.mission-essential}
+      # builtin-pattern: aws-cloudformation-templates
+      # confidence: medium | provider-created stack-template store; contents are deploy-time only
+      # manual-review: attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material
+      # manual-review: confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)
+      - {type: AWS::S3::Bucket, match: "cf-templates-*", securityImpactProfile: service-content.disposable-state.deferrable-work}
