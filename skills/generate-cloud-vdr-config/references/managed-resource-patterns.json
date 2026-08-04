@@ -1,0 +1,183 @@
+[
+  {
+    "id": "gcp-cloudfunctions-staging",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["gcf-sources-*", "gcf-v2-sources-*"],
+    "markerTags": {},
+    "managedBy": "Cloud Functions",
+    "rationale": "Cloud Functions auto-creates these buckets to stage function source archives, so its deploy pipeline owns the naming and tagging rather than the tenant.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-cloudbuild-artifacts",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["*_cloudbuild"],
+    "markerTags": {},
+    "managedBy": "Cloud Build",
+    "rationale": "Cloud Build auto-creates this bucket to hold build artifacts and logs, so the build service controls its lifecycle and tagging is limited for the tenant.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-cloudrun-sources",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["run-sources-*"],
+    "markerTags": {},
+    "managedBy": "Cloud Run",
+    "rationale": "Cloud Run auto-creates these buckets to stage source uploads for source-based deployments, so the service owns naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-dataproc-staging",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["dataproc-staging-*", "dataproc-temp-*"],
+    "markerTags": {},
+    "managedBy": "Dataproc",
+    "rationale": "Dataproc auto-creates these staging and temp buckets for cluster job scratch data, so the service controls their lifecycle and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-container-registry-artifacts",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["artifacts.*.appspot.com"],
+    "markerTags": {},
+    "managedBy": "Container Registry",
+    "rationale": "Container Registry auto-creates this backing bucket to store pushed container image layers, so the service owns its naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-appengine-staging",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": ["staging.*.appspot.com"],
+    "markerTags": {},
+    "managedBy": "App Engine",
+    "rationale": "App Engine auto-creates this staging bucket to stage application deployment artifacts, so the service controls its lifecycle and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "gcp-managed-by-label",
+    "provider": "gcp",
+    "type": "storage.googleapis.com/Bucket",
+    "nameGlobs": [],
+    "markerTags": {"goog-managed-by": "*"},
+    "managedBy": "GCP service (per label value)",
+    "rationale": "A GCP service auto-applies the goog-managed-by label to buckets it provisions on the tenant's behalf, so that service owns the resource and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "aws-cloudformation-templates",
+    "provider": "aws",
+    "type": "AWS::S3::Bucket",
+    "nameGlobs": ["cf-templates-*"],
+    "markerTags": {},
+    "managedBy": "CloudFormation",
+    "rationale": "CloudFormation auto-creates this bucket to store uploaded stack templates, so the service owns its naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "aws-cdk-assets",
+    "provider": "aws",
+    "type": "AWS::S3::Bucket",
+    "nameGlobs": ["cdk-*-assets-*"],
+    "markerTags": {},
+    "managedBy": "AWS CDK bootstrap",
+    "rationale": "AWS CDK bootstrap auto-creates this bucket to stage synthesized deployment assets, so the bootstrap process owns its naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "aws-elasticbeanstalk-artifacts",
+    "provider": "aws",
+    "type": "AWS::S3::Bucket",
+    "nameGlobs": ["elasticbeanstalk-*"],
+    "markerTags": {},
+    "managedBy": "Elastic Beanstalk",
+    "rationale": "Elastic Beanstalk auto-creates this bucket to store application version artifacts and logs, so the service owns its naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "aws-athena-query-results",
+    "provider": "aws",
+    "type": "AWS::S3::Bucket",
+    "nameGlobs": ["aws-athena-query-results-*"],
+    "markerTags": {},
+    "managedBy": "Athena",
+    "rationale": "Athena auto-creates this bucket to store query result output, so the service owns its naming and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  },
+  {
+    "id": "aws-cloudformation-managed",
+    "provider": "aws",
+    "type": "*",
+    "nameGlobs": [],
+    "markerTags": {"aws:cloudformation:stack-name": "*"},
+    "managedBy": "CloudFormation",
+    "rationale": "CloudFormation auto-applies the aws:cloudformation:stack-name tag to every resource it provisions, so the owning stack controls the resource and tenant tagging is limited.",
+    "defaultSecurityImpactProfile": "service-content.disposable-state.deferrable-work",
+    "maxConfidence": "medium",
+    "manualReview": [
+      "the owning stack defines this resource's real role; classify by the stack's purpose, not this default",
+      "attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material",
+      "confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)"
+    ]
+  }
+]
