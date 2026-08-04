@@ -205,6 +205,13 @@ class ValidateTests(unittest.TestCase):
         report = self.mod.confidence_report(plan, coverage)
         self.assertIn("tag-override", report)
 
+    def test_global_default_invalid_sip_fails(self):
+        plan, inventory, coverage = self.build()
+        plan["defaults"] = {**DEFAULTS,
+                            "securityImpactProfile": "made-up.bogus.trace"}
+        errors = self.mod.validate(plan, inventory, coverage, self.render(plan))
+        self.assertTrue(any("made-up" in e for e in errors))
+
     def test_confidence_report_lists_medium_and_none(self):
         plan, inventory, coverage = self.build()
         report = self.mod.confidence_report(plan, coverage)

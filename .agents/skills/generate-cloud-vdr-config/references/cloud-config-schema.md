@@ -128,6 +128,11 @@ what `gcloud asset list` and the AWS Config/tagging APIs emit, so discovery
 needs no mapping layer). Every other match field — `match`, `matchTags` values,
 `network`, `subnet`, `region` — is an `fnmatch` glob.
 
+Under the GCP Cloud Asset API inventory path, Compute Engine instance `region`
+values are zone-granular (e.g. `us-central1-a`), while the per-service fallback
+records the true region (`us-central1`), so write region globs tolerant of both
+(e.g. `us-central1*`).
+
 | Family | Required field | Optional narrowing fields | Notes |
 |---|---|---|---|
 | `nameRules` | `match` | `type` (strongly recommended), `matchTags`, `region` | name globs are meaningless across types, so always pin `type` |

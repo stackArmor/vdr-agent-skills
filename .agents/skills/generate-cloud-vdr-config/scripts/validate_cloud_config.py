@@ -396,6 +396,9 @@ def validate(plan, inventory, coverage, rendered_text):
     errors = []
     defaults = plan.get("defaults") or {}
 
+    if defaults.get("securityImpactProfile"):
+        _validate_sip_value(defaults["securityImpactProfile"], "defaults", errors)
+
     plan_scopes = {scope_key(scope): scope for scope in plan.get("scopes", [])}
     inventory_scopes = {scope_key(scope): scope
                         for scope in inventory.get("scopes", [])}
