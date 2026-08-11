@@ -1,4 +1,8 @@
-# trivy-plugin-vdr-skills
+# vdr-agent-skills
+
+> Repository rename: this project was previously named `trivy-plugin-vdr-skills`.
+> GitHub preserves redirects for the old repository URL and Git clients, but new
+> links and checkouts should use `stackArmor/vdr-agent-skills`.
 
 Agent skills that capture reviewable security metadata for
 [trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) FedRAMP
@@ -99,7 +103,7 @@ Class and multi-agency defaults.
 ### Claude Code
 
 ```
-/plugin marketplace add stackArmor/trivy-plugin-vdr-skills
+/plugin marketplace add stackArmor/vdr-agent-skills
 /plugin install trivy-plugin-vdr-skills
 ```
 
