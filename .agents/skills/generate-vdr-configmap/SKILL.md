@@ -308,10 +308,23 @@ override directly in one-shot and Helm-hook Job manifests.
 Ask once whether any Ingress/Gateway class is fronted by a load balancer built
 outside Kubernetes. Include `internetAccessibleIngressClasses` or
 `internetAccessibleGatewayClasses` for high-confidence observed or
-operator-confirmed classes. If outside-Kubernetes reachability is unanswered,
-make a conservative best guess from active route objects, controller Services,
-addresses, annotations, and class purpose. Annotate the key with confidence and
-manual-review comments, and record the assumption in
+operator-confirmed reachable classes. If an operator confirms a class has
+sufficient IP whitelisting to be not internet reachable, emit it under
+`notInternetAccessibleIngressClasses` or
+`notInternetAccessibleGatewayClasses` and document immediately above that
+ConfigMap key that WAF, L7, OWASP, or DDoS protections alone do not make a
+public load balancer non-internet-reachable; only sufficiently strict IP
+whitelisting qualifies, though a WAF may implement that allowlist. When an
+attested class is implemented by a directly exposed LoadBalancer Service, also
+emit that exact `namespace/name` under `notInternetAccessibleServices`; never
+infer the Service-to-class relationship from a name alone. Negative class lists
+override built-in class detection, but a positive list wins over a conflicting
+negative list and the plugin emits a non-failing `ERROR`. An explicit
+IngressClass or Service reachability label remains more specific. If
+outside-Kubernetes reachability is unanswered, make
+a conservative best guess from active route objects, controller Services,
+addresses, annotations, and class purpose. Annotate each emitted key with
+confidence and manual-review comments, and record the assumption in
 `configurationAssumptions`. Do not invent Gateway classes when no active
 Gateway objects exist. Omit the keys when the best-supported conclusion is
 that there are none. When an omission is not high confidence, put confidence
