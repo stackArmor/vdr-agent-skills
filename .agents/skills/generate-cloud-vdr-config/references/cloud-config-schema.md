@@ -158,9 +158,15 @@ identities.
 | GCP | `sqladmin.googleapis.com/Instance` | Cloud SQL instance name |
 | GCP | `compute.googleapis.com/Instance` | GCE instance name |
 | GCP | `bigquery.googleapis.com/Dataset` | BigQuery dataset id |
+| GCP | `run.googleapis.com/Service` | Cloud Run service name |
+| GCP | `run.googleapis.com/Job` | Cloud Run job name |
+| GCP | `cloudfunctions.googleapis.com/Function` | Cloud Function name |
 | AWS | `AWS::S3::Bucket` | S3 bucket name |
 | AWS | `AWS::EC2::Instance` | EC2 **instance ID** (Name-tag matching goes through `tagRules`) |
 | AWS | `AWS::RDS::DBInstance` | RDS DB identifier |
+| AWS | `AWS::ECS::TaskDefinition` | ECS Task Definition `family:revision` (e.g. `api-server:4`) |
+| AWS | `AWS::ECS::Service` | ECS Service identifier (`cluster/service` or `service`) |
+| AWS | `AWS::ECS::Cluster` | ECS Cluster name |
 
 ## Value and comment conventions
 

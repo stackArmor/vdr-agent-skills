@@ -144,6 +144,9 @@ class GcpInventoryTests(unittest.TestCase):
             ("sql instances list", []),
             ("compute instances list", []),
             ("bq ", []),
+            ("run services list", [{"metadata": {"name": "web-svc", "labels": {"env": "prod"}}}]),
+            ("run jobs list", [{"metadata": {"name": "batch-job", "labels": {"env": "prod"}}}]),
+            ("functions list", [{"name": "projects/acme/locations/us-central1/functions/api-fn", "labels": {}}]),
         ])
         scope = self.mod.inventory_gcp("acme-prod", self.patterns,
                                        runner=runner, use_asset_api=False)
@@ -151,7 +154,11 @@ class GcpInventoryTests(unittest.TestCase):
                          scope["provenance"]["inventorySource"])
         self.assertTrue(any("Asset" in w or "asset" in w
                             for w in scope["warnings"]))
-        self.assertEqual(1, len(scope["resources"]))
+        self.assertEqual(4, len(scope["resources"]))
+        by_type = {r["type"]: r for r in scope["resources"]}
+        self.assertIn("run.googleapis.com/Service", by_type)
+        self.assertIn("run.googleapis.com/Job", by_type)
+        self.assertIn("cloudfunctions.googleapis.com/Function", by_type)
 
     def test_merge_scopes_summary(self):
         scope = {"provider": "gcp", "project": "p", "provenance": {},
@@ -191,12 +198,22 @@ class AwsInventoryTests(unittest.TestCase):
                   "Placement": {"AvailabilityZone": "us-east-1a"},
                   "Tags": [{"Key": "Name", "Value": "web-1"},
                             {"Key": "aws:cloudformation:stack-name",
-                             "Value": "web"}]}]}]}),
+                              "Value": "web"}]}]}]}),
             ("rds describe-db-instances",
              {"DBInstances": [{"DBInstanceIdentifier": "prod-db",
                                 "DBSubnetGroup": {"VpcId": "vpc-11"},
                                 "AvailabilityZone": "us-east-1a",
                                 "TagList": [{"Key": "env", "Value": "prod"}]}]}),
+            ("ecs list-task-definitions",
+             {"taskDefinitionArns": ["arn:aws:ecs:us-east-1:123456789012:task-definition/api-server:4"]}),
+            ("ecs describe-task-definition",
+             {"tags": [{"Key": "env", "Value": "prod"}]}),
+            ("ecs list-clusters",
+             {"clusterArns": ["arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster"]}),
+            ("ecs list-services",
+             {"serviceArns": ["arn:aws:ecs:us-east-1:123456789012:service/prod-cluster/api-svc"]}),
+            ("ecs describe-services",
+             {"services": [{"serviceName": "api-svc", "tags": [{"Key": "env", "Value": "prod"}]}]}),
         ])
 
     def test_aws_inventory(self):
@@ -216,8 +233,13 @@ class AwsInventoryTests(unittest.TestCase):
         self.assertEqual("subnet-22", ec2["subnet"])
         self.assertIn("aws-cloudformation-managed", ec2["builtinPatterns"])
         self.assertEqual("AWS::RDS::DBInstance", by_id["prod-db"]["type"])
+        self.assertEqual("AWS::ECS::TaskDefinition", by_id["api-server:4"]["type"])
+        self.assertEqual("AWS::ECS::Service", by_id["prod-cluster/api-svc"]["type"])
         # every aws call pins the confirmed profile
         for call in runner.calls:
+            if call and call[0] == "aws":
+                self.assertIn("--profile", call)
+                self.assertIn("prod", call)
             if call and call[0] == "aws":
                 self.assertIn("--profile", call)
                 self.assertIn("prod", call)

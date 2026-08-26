@@ -18,6 +18,10 @@ GCP_ASSET_TYPES = [
     "compute.googleapis.com/Instance",
     "sqladmin.googleapis.com/Instance",
     "bigquery.googleapis.com/Dataset",
+    "run.googleapis.com/Service",
+    "run.googleapis.com/Job",
+    "cloudfunctions.googleapis.com/CloudFunction",
+    "cloudfunctions.googleapis.com/Function",
 ]
 
 GCP_KEY_ALIASES = {
@@ -142,7 +146,7 @@ def _map_asset(asset, provider_patterns):
         if private_network:
             network = _last_segment(private_network)
     else:
-        tags = data.get("labels") or {}
+        tags = data.get("labels") or (data.get("metadata") or {}).get("labels") or {}
         nics = data.get("networkInterfaces") or []
         if nics:
             nic = nics[0]
@@ -219,12 +223,51 @@ def _gcp_service_inventory(project, runner, provider_patterns, warnings):
                 dataset.get("location"), dataset.get("labels") or {}, None, None,
                 provider_patterns))
 
+    try:
+        run_services = _load_json(runner(["gcloud", "run", "services", "list",
+                                          "--project", project, "--format", "json"]))
+        for svc in run_services:
+            svc_name = (svc.get("metadata") or {}).get("name") or svc.get("name")
+            svc_labels = (svc.get("metadata") or {}).get("labels") or svc.get("labels") or {}
+            svc_region = ((svc.get("metadata") or {}).get("labels") or {}).get("cloud.googleapis.com/location") or svc.get("region")
+            resources.append(_build_resource(
+                "run.googleapis.com/Service", svc_name, svc_region, svc_labels, None, None, provider_patterns))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("Cloud Run services were not enumerated for project %s: %s" % (project, first_line))
+
+    try:
+        run_jobs = _load_json(runner(["gcloud", "run", "jobs", "list",
+                                      "--project", project, "--format", "json"]))
+        for job in run_jobs:
+            job_name = (job.get("metadata") or {}).get("name") or job.get("name")
+            job_labels = (job.get("metadata") or {}).get("labels") or job.get("labels") or {}
+            job_region = ((job.get("metadata") or {}).get("labels") or {}).get("cloud.googleapis.com/location") or job.get("region")
+            resources.append(_build_resource(
+                "run.googleapis.com/Job", job_name, job_region, job_labels, None, None, provider_patterns))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("Cloud Run jobs were not enumerated for project %s: %s" % (project, first_line))
+
+    try:
+        functions = _load_json(runner(["gcloud", "functions", "list",
+                                       "--project", project, "--format", "json"]))
+        for fn in functions:
+            fn_name = _last_segment(fn.get("name") or "")
+            fn_labels = fn.get("labels") or {}
+            fn_region = _last_segment(fn.get("name", "").rsplit("/functions/", 1)[0]) if "/functions/" in fn.get("name", "") else fn.get("region")
+            resources.append(_build_resource(
+                "cloudfunctions.googleapis.com/Function", fn_name, fn_region, fn_labels if isinstance(fn_labels, dict) else {}, None, None, provider_patterns))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("Cloud Functions were not enumerated for project %s: %s" % (project, first_line))
+
     return resources
 
 
 def _asset_fallback_warning(project, error_line):
     message = ("Cloud Asset API was not used for project %s; the per-service "
-               "fallback covers buckets, SQL, compute, and BigQuery only."
+               "fallback covers buckets, SQL, compute, BigQuery, Cloud Run, and Cloud Functions."
                % project)
     if error_line:
         message += " Cloud Asset API error: %s" % error_line
@@ -323,24 +366,80 @@ def _aws_s3_inventory(runner, profile, provider_patterns, warnings):
     return resources
 
 
-def _aws_region_inventory(runner, profile, region, provider_patterns):
+def _aws_region_inventory(runner, profile, region, provider_patterns, warnings=None):
+    if warnings is None:
+        warnings = []
     resources = []
-    ec2 = _aws_json(runner, ["ec2", "describe-instances"], profile, region)
-    for reservation in ec2.get("Reservations") or []:
-        for instance in reservation.get("Instances") or []:
-            resources.append(_build_resource(
-                "AWS::EC2::Instance", instance.get("InstanceId"), region,
-                _kv_list_to_dict(instance.get("Tags")),
-                instance.get("VpcId"), instance.get("SubnetId"),
-                provider_patterns, provider="aws"))
+    try:
+        ec2 = _aws_json(runner, ["ec2", "describe-instances"], profile, region)
+        for reservation in ec2.get("Reservations") or []:
+            for instance in reservation.get("Instances") or []:
+                resources.append(_build_resource(
+                    "AWS::EC2::Instance", instance.get("InstanceId"), region,
+                    _kv_list_to_dict(instance.get("Tags")),
+                    instance.get("VpcId"), instance.get("SubnetId"),
+                    provider_patterns, provider="aws"))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("EC2 instances were not enumerated for region %s: %s" % (region, first_line))
 
-    rds = _aws_json(runner, ["rds", "describe-db-instances"], profile, region)
-    for db in rds.get("DBInstances") or []:
-        network = (db.get("DBSubnetGroup") or {}).get("VpcId")
-        resources.append(_build_resource(
-            "AWS::RDS::DBInstance", db.get("DBInstanceIdentifier"), region,
-            _kv_list_to_dict(db.get("TagList")), network, None,
-            provider_patterns, provider="aws"))
+    try:
+        rds = _aws_json(runner, ["rds", "describe-db-instances"], profile, region)
+        for db in rds.get("DBInstances") or []:
+            network = (db.get("DBSubnetGroup") or {}).get("VpcId")
+            resources.append(_build_resource(
+                "AWS::RDS::DBInstance", db.get("DBInstanceIdentifier"), region,
+                _kv_list_to_dict(db.get("TagList")), network, None,
+                provider_patterns, provider="aws"))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("RDS instances were not enumerated for region %s: %s" % (region, first_line))
+
+    try:
+        task_defs = _aws_json(runner, ["ecs", "list-task-definitions", "--status", "ACTIVE"], profile, region)
+        for arn in (task_defs.get("taskDefinitionArns") or []):
+            family_rev = _last_segment(arn)
+            tags = {}
+            try:
+                td_desc = _aws_json(runner, ["ecs", "describe-task-definition", "--task-definition", arn, "--include", "TAGS"], profile, region)
+                tags = _kv_list_to_dict(td_desc.get("tags"))
+            except RuntimeError:
+                pass
+            resources.append(_build_resource(
+                "AWS::ECS::TaskDefinition", family_rev, region, tags, None, None,
+                provider_patterns, provider="aws"))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("ECS task definitions were not enumerated for region %s: %s" % (region, first_line))
+
+    try:
+        clusters = _aws_json(runner, ["ecs", "list-clusters"], profile, region)
+        for cluster_arn in (clusters.get("clusterArns") or []):
+            cluster_name = _last_segment(cluster_arn)
+            try:
+                services = _aws_json(runner, ["ecs", "list-services", "--cluster", cluster_arn], profile, region)
+                service_arns = services.get("serviceArns") or []
+                if service_arns:
+                    for i in range(0, len(service_arns), 10):
+                        batch = service_arns[i:i+10]
+                        desc = _aws_json(runner, ["ecs", "describe-services", "--cluster", cluster_arn, "--services"] + batch + ["--include", "TAGS"], profile, region)
+                        for svc in (desc.get("services") or []):
+                            svc_name = svc.get("serviceName")
+                            svc_tags = _kv_list_to_dict(svc.get("tags"))
+                            network = None
+                            subnet = None
+                            awsvpc = (svc.get("networkConfiguration") or {}).get("awsvpcConfiguration")
+                            if awsvpc and awsvpc.get("subnets"):
+                                subnet = awsvpc["subnets"][0]
+                            resources.append(_build_resource(
+                                "AWS::ECS::Service", f"{cluster_name}/{svc_name}", region, svc_tags, network, subnet,
+                                provider_patterns, provider="aws"))
+            except RuntimeError:
+                pass
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("ECS services were not enumerated for region %s: %s" % (region, first_line))
+
     return resources
 
 
@@ -354,7 +453,7 @@ def inventory_aws(profile, regions, patterns, runner=run_command):
     resources = _aws_s3_inventory(runner, profile, provider_patterns, warnings)
     for region in regions:
         resources.extend(_aws_region_inventory(
-            runner, profile, region, provider_patterns))
+            runner, profile, region, provider_patterns, warnings))
 
     provenance = {
         "inventorySource": "per-service",
