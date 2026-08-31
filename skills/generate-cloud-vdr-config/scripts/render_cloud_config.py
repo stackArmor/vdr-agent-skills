@@ -20,6 +20,7 @@ HEADER = [
 RULE_KEY_ORDER = [
     "type", "match", "matchTags", "network", "subnet", "region",
     "securityImpactProfile", "multiAgency",
+    "internetReachable", "internetReachableJustification",
 ]
 
 VALID_CONFIDENCE = ("high", "medium", "low")
@@ -66,11 +67,51 @@ def _render_rule_map(rule):
             continue
         if key == "matchTags":
             parts.append("matchTags: %s" % _render_match_tags(value))
-        elif key == "multiAgency":
-            parts.append("multiAgency: %s" % _quote(value, force=True))
+        elif key in ("multiAgency", "internetReachable",
+                     "internetReachableJustification"):
+            parts.append("%s: %s" % (key, _quote(value, force=True)))
         else:
             parts.append("%s: %s" % (key, _quote(value)))
     return "- {%s}" % ", ".join(parts)
+
+
+def _check_reachability(rule, where):
+    """Enforce the reachability attestation contract, raising ValueError.
+
+    ``internetReachable: "false"`` retracts a verdict TSW derived from firewall,
+    route, and load-balancer evidence, so it is the one assignable attribute
+    that cannot be emitted without prose an assessor can read. See
+    ``references/cloud-config-schema.md`` for why WAF and DDoS protections do
+    not qualify as justification.
+    """
+    value = rule.get("internetReachable")
+    justification = (rule.get("internetReachableJustification") or "").strip()
+    if value not in (None, "true", "false"):
+        raise ValueError(
+            '%s: internetReachable must be the quoted string "true" or '
+            '"false", got %r' % (where, value))
+    if value == "false" and not justification:
+        raise ValueError(
+            "%s: internetReachable \"false\" requires a non-empty "
+            "internetReachableJustification naming the allowlist that "
+            "restricts access and where it is enforced" % where)
+    if justification and value != "false":
+        raise ValueError(
+            '%s: internetReachableJustification is only meaningful with '
+            'internetReachable "false"' % where)
+
+
+def _reject_broad_reachability(container, where):
+    """Refuse a reachability attestation outside a rule.
+
+    A defaults- or scope-level value is the broad fail-open the schema's
+    fail-loud stance exists to prevent, and the generator has no reason to emit
+    the redundant ``"true"`` form either.
+    """
+    if container.get("internetReachable") is not None:
+        raise ValueError(
+            "%s: internetReachable may only be set on a rule that names the "
+            "assets it covers" % where)
 
 
 def _attestation_lines(key, attestation, indent, where):
@@ -91,6 +132,7 @@ def _rule_lines(rule, indent, where):
     confidence = rule["confidence"]
     manual_review = rule.get("manualReview", [])
     _check_confidence(confidence, manual_review, where)
+    _check_reachability(rule, where)
     lines = []
     if rule.get("builtinPattern"):
         lines.append("%s# builtin-pattern: %s" % (indent, rule["builtinPattern"]))
@@ -137,6 +179,7 @@ def render(plan):
     lines = list(HEADER)
 
     defaults = plan["defaults"]
+    _reject_broad_reachability(defaults, "defaults")
     lines.append("defaults:")
     lines.extend(_attestation_lines("class", defaults["class"], "  ",
                                     "defaults class"))
@@ -158,6 +201,7 @@ def render(plan):
             scope_id = scope["project"]
             id_line = "    project: %s" % scope_id
         scope_key = "%s/%s" % (provider, scope_id)
+        _reject_broad_reachability(scope, scope_key)
         # First list-item line carries provider; identity is a continuation key.
         lines.append("  - provider: %s" % provider)
         lines.append(id_line)

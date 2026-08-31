@@ -50,6 +50,54 @@ DEFAULTS = {"class": {"value": "C", "confidence": "high", "evidence": "e",
             "securityImpactProfile": None}
 
 
+class ReachabilityAttestationValidationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load("validate_cloud_config")
+
+    def _errors(self, **rule_kw):
+        base = {"type": "compute.googleapis.com/Instance", "match": "sftp-*"}
+        base.update(rule_kw)
+        errors = []
+        self.mod._validate_scope_shape(
+            scope_plan(nameRules=[rule(**base)]), "gcp/acme-prod", errors)
+        return errors
+
+    def test_attestation_with_justification_is_accepted(self):
+        errors = self._errors(
+            internetReachable="false",
+            internetReachableJustification="Only the agency allowlist reaches port 22.")
+        self.assertEqual(errors, [])
+
+    def test_false_without_justification_is_an_error(self):
+        errors = self._errors(internetReachable="false")
+        self.assertTrue(any("requires a non-empty" in e for e in errors), errors)
+
+    def test_justification_without_a_negative_attestation_is_an_error(self):
+        errors = self._errors(internetReachable="true",
+                              internetReachableJustification="why")
+        self.assertTrue(any("only meaningful" in e for e in errors), errors)
+
+    def test_unquoted_boolean_is_an_error(self):
+        errors = self._errors(internetReachable=False)
+        self.assertTrue(any("quoted string" in e for e in errors), errors)
+
+    def test_internet_reachable_alone_satisfies_the_assignment_requirement(self):
+        errors = self._errors(internetReachable="true")
+        self.assertEqual(errors, [])
+
+    def test_a_rule_assigning_nothing_is_still_an_error(self):
+        errors = self._errors()
+        self.assertTrue(any("assigns none of" in e for e in errors), errors)
+
+    def test_scope_level_attestation_is_refused(self):
+        errors = []
+        plan = scope_plan()
+        plan["internetReachable"] = "true"
+        self.mod._validate_scope_shape(plan, "gcp/acme-prod", errors)
+        self.assertTrue(any("may only be set on a rule" in e for e in errors), errors)
+
+
 class ResolveTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

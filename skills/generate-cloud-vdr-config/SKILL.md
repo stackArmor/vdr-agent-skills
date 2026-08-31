@@ -147,6 +147,39 @@ replicas; redundancy is a mitigating control outside the requirement vector.
 Confidence describes evidence quality; it never lowers CR/IR/AR. When several
 outcomes remain credible, choose the strongest and state what would change it.
 
+### 4b. Ask once about strict IP allowlists
+
+TSW derives internet reachability from firewall, route, and load-balancer
+evidence. It reports an asset **reachable** whenever it can prove some internet
+host reaches an open port — including when the firewall admits only a handful
+of public CIDRs, because that is still reachable as a matter of network fact.
+Whether such an allowlist is tight enough that the asset should not count as
+internet-reachable is a judgement no evaluator can make, so ask for it.
+
+Ask once, for the whole run: *are any of these assets reachable from the public
+internet only through a strict source-IP allowlist that you maintain?* Then, for
+each asset class the operator names:
+
+- Emit `internetReachable: "false"` with a non-empty
+  `internetReachableJustification` on the narrowest rule that covers exactly
+  those assets. It goes on a rule — never at `defaults` or scope level, which
+  both scripts refuse.
+- **WAF, L7 filtering, OWASP rule sets, and DDoS protection alone never
+  qualify.** Only sufficiently strict IP whitelisting does, though a WAF may be
+  the component that implements the allowlist. If the operator offers a WAF as
+  the reason, say this and ask again for the allowlist.
+- Write the justification for an assessor: name the allowlist, say where it is
+  enforced, and say what it admits. TSW publishes it verbatim next to the
+  evaluated verdict the attestation displaced.
+- Carry a `# manual-review:` line requiring re-attestation whenever the
+  allowlist widens, and record the attestation in `configurationAssumptions`.
+
+Never infer this attestation, and never emit it to quiet an `unknown`
+reachability verdict — an operator confirming a specific allowlist is the only
+thing that justifies it. Emitting nothing is always safe: TSW keeps its own
+verdict. `internetReachable: "true"` needs no justification, but it is also
+rarely worth emitting, since it agrees with the conservative default.
+
 ### 5. Author the assignment plan
 
 Write `./vdr-cloud-output/assignment-plan.json` (shape in
@@ -169,7 +202,8 @@ global level: a resource that no rule matches should fail validation, not
 inherit a broad default. Every rule and every `class`/`multiAgency` value gets a
 confidence level; every non-high item gets at least one concrete manual-review
 string. Attributes resolve independently — a one-line `nameRule` can flip
-`multiAgency` for one resource while its SIP resolves from a broader rule.
+`multiAgency` or `internetReachable` for one resource while its SIP resolves
+from a broader rule.
 
 ### 6. Emit and validate
 
@@ -185,7 +219,9 @@ python3 <skill-dir>/scripts/render_cloud_config.py \
 Author `./vdr-cloud-output/assignment-coverage.json` with one assignment entry
 per inventoried resource (`scope`, `type`, `identifier`,
 `securityImpactProfile`, `derivationMethod`, `vector`, `resolutionSource`,
-`multiAgency`, `multiAgencySource`, `status`, `confidence`, `evidence`,
+`multiAgency`, `multiAgencySource`, `internetReachable`,
+`internetReachableSource`, `internetReachableJustification`, `status`,
+`confidence`, `evidence`,
 `assumptions`, `manualReview`) plus `configurationAssumptions` and `summary`.
 Give every non-high entry at least one concrete manual-review item; record
 provisional Class/multiAgency values in `configurationAssumptions`. Then:

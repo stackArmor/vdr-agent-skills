@@ -48,6 +48,82 @@ def minimal_plan():
     }
 
 
+def attested_rule(**kw):
+    base = {
+        "type": "compute.googleapis.com/Instance", "match": "sftp-*",
+        "matchTags": None, "network": None, "subnet": None, "region": None,
+        "securityImpactProfile": None, "multiAgency": None,
+        "internetReachable": "false",
+        "internetReachableJustification":
+            "Port 22 admits only the twelve agency source CIDRs enforced on "
+            "the load-balancer backend firewall.",
+        "confidence": "high", "builtinPattern": None,
+        "evidence": "operator-attested strict allowlist", "manualReview": [],
+    }
+    base.update(kw)
+    return base
+
+
+def plan_with_rule(rule):
+    plan = minimal_plan()
+    plan["scopes"][0]["nameRules"] = [rule]
+    return plan
+
+
+class ReachabilityAttestationRenderTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load()
+
+    def test_attestation_and_justification_are_rendered_quoted(self):
+        text = self.mod.render(plan_with_rule(attested_rule()))
+        self.assertIn('internetReachable: "false"', text)
+        self.assertIn('internetReachableJustification: "Port 22 admits only', text)
+
+    def test_false_without_justification_is_refused(self):
+        rule = attested_rule(internetReachableJustification=None)
+        with self.assertRaises(ValueError) as ctx:
+            self.mod.render(plan_with_rule(rule))
+        self.assertIn("requires a non-empty", str(ctx.exception))
+
+    def test_blank_justification_is_refused(self):
+        rule = attested_rule(internetReachableJustification="   ")
+        with self.assertRaises(ValueError):
+            self.mod.render(plan_with_rule(rule))
+
+    def test_justification_without_a_negative_attestation_is_refused(self):
+        rule = attested_rule(internetReachable="true")
+        with self.assertRaises(ValueError) as ctx:
+            self.mod.render(plan_with_rule(rule))
+        self.assertIn("only meaningful", str(ctx.exception))
+
+    def test_unquoted_boolean_is_refused(self):
+        rule = attested_rule(internetReachable=False)
+        with self.assertRaises(ValueError) as ctx:
+            self.mod.render(plan_with_rule(rule))
+        self.assertIn("quoted string", str(ctx.exception))
+
+    def test_true_needs_no_justification(self):
+        rule = attested_rule(internetReachable="true",
+                             internetReachableJustification=None)
+        self.assertIn('internetReachable: "true"',
+                      self.mod.render(plan_with_rule(rule)))
+
+    def test_defaults_may_not_attest_reachability(self):
+        plan = minimal_plan()
+        plan["defaults"]["internetReachable"] = "false"
+        with self.assertRaises(ValueError) as ctx:
+            self.mod.render(plan)
+        self.assertIn("only be set on a rule", str(ctx.exception))
+
+    def test_scope_may_not_attest_reachability(self):
+        plan = minimal_plan()
+        plan["scopes"][0]["internetReachable"] = "true"
+        with self.assertRaises(ValueError) as ctx:
+            self.mod.render(plan)
+        self.assertIn("only be set on a rule", str(ctx.exception))
+
+
 class RenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

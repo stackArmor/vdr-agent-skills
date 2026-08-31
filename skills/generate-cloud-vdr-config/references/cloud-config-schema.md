@@ -22,8 +22,9 @@ record of cloud-resource impact assignments, not a runtime input.
 4. [Rule-family fields](#rule-family-fields)
 5. [Primary identifiers](#primary-identifiers)
 6. [Value and comment conventions](#value-and-comment-conventions)
-7. [Fail-loud stance on broad defaults](#fail-loud-stance-on-broad-defaults)
-8. [Assignment-plan JSON shape](#assignment-plan-json-shape)
+7. [Operator-attested internet reachability](#operator-attested-internet-reachability)
+8. [Fail-loud stance on broad defaults](#fail-loud-stance-on-broad-defaults)
+9. [Assignment-plan JSON shape](#assignment-plan-json-shape)
 
 ## Document schema
 
@@ -62,6 +63,15 @@ scopes:
       # SIP still resolves from broader rules
       - {type: storage.googleapis.com/Bucket, match: "acme-prod-agency-exchange",
          multiAgency: "true"}
+      # confidence: high | operator-attested: SSH reachable only through the
+      #   agency transfer allowlist (12 CIDRs on the LB backend firewall)
+      # manual-review: re-attest whenever the allowlist widens; a WAF or DDoS
+      #   service in front of this LB would NOT justify this attestation
+      - {type: compute.googleapis.com/Instance, match: "sftp-*",
+         internetReachable: "false",
+         internetReachableJustification: "Port 22 reachable only from the 12
+           operator-maintained agency source CIDRs enforced on the LB backend
+           firewall; no unrestricted ingress path exists."}
       # builtin-pattern: gcp-cloudfunctions-staging
       # confidence: medium | provider-created transient artifact store; contents
       #   are deploy-time only and overwritten on update
@@ -103,7 +113,9 @@ Precedence per resource, most specific first:
 3. `tagRules`;
 4. `networkRules`;
 5. `typeRules`;
-6. scope `class` / `multiAgency` / optional scope `securityImpactProfile`;
+6. scope `class` / `multiAgency` / optional scope `securityImpactProfile`
+   (scope level may set `internetReachable: "true"`, never `"false"` — see
+   [Operator-attested internet reachability](#operator-attested-internet-reachability));
 7. global `defaults`;
 8. fail-loud validation error.
 
@@ -117,9 +129,18 @@ resource that no rule matches and that no scope or global default covers is a
 Each attribute resolves independently down the same chain. `securityImpactProfile`
 resolves from the first rule (in family then document order) that sets
 `securityImpactProfile`; `multiAgency` resolves from the first rule that sets
-`multiAgency`. A one-line `nameRule` can flip `multiAgency` for a single
+`multiAgency`; `internetReachable` resolves from the first rule that sets
+`internetReachable`. A one-line `nameRule` can flip `multiAgency` for a single
 resource while its SIP continues to resolve from a broader rule. Any rule in
-any family may carry either attribute or both; a rule must carry at least one.
+any family may carry any combination of the three; a rule must carry at least
+one.
+
+`internetReachable` differs from the other two in what it overrides. SIP,
+Class, and `multiAgency` have no automated producer — this document is their
+only source. `internetReachable` **displaces an evidence-backed verdict** that
+TSW's inventory evaluator computed from firewall, route, and load-balancer
+facts. It is therefore the one attribute that carries a mandatory justification
+and is refused at the `defaults` level.
 
 ## Rule-family fields
 
@@ -140,8 +161,10 @@ records the true region (`us-central1`), so write region globs tolerant of both
 | `networkRules` | `network` | `subnet`, `type`, `region` | applies only to network-attached types; can never match a global resource such as a bucket |
 | `typeRules` | `type` | `region` | matches a whole resource family in the scope |
 
-Any rule may also set `securityImpactProfile`, `multiAgency`, or both; at least
-one is required. Optional secondary constraints AND together within a rule, so
+Any rule may also set `securityImpactProfile`, `multiAgency`, or
+`internetReachable`, in any combination; at least one is required. A rule
+setting `internetReachable: "false"` must also set
+`internetReachableJustification`. Optional secondary constraints AND together within a rule, so
 compound matches need no extra mechanism. A `networkRule` whose `type` is a
 global (non-network-attached) type fails validation.
 
@@ -178,8 +201,13 @@ identities.
   never appear inside `vdr-cloud.yaml`. See
   `../../tag-terraform-vdr-assets/references/cis-asset-map.md` for the encoding
   rules.
-- `class` and `multiAgency` are quoted strings (`"A"`–`"D"`, `"true"`/`"false"`),
-  same as `vdr-fedramp`.
+- `class`, `multiAgency`, and `internetReachable` are quoted strings
+  (`"A"`–`"D"`, `"true"`/`"false"`), same as `vdr-fedramp`.
+- `internetReachableJustification` is free text, required and non-empty whenever
+  `internetReachable` is `"false"`. It states the specific network control that
+  restricts access, not a conclusion: name the allowlist, say where it is
+  enforced, and say what it admits. TSW surfaces it verbatim in the audit view,
+  so write it for an assessor rather than for a teammate.
 - `# confidence: high|medium|low` sits immediately above every rule or coherent
   rule group and above every `class`/`multiAgency` value, even
   operator-confirmed ones. `# manual-review: ...` accompanies every non-high
@@ -192,6 +220,44 @@ identities.
   override agreements/conflicts, not treated as operator attestations unless
   reconfirmed.
 
+## Operator-attested internet reachability
+
+TSW's inventory evaluator decides internet reachability from collected
+firewall, route, and load-balancer evidence and publishes a tri-state: `true`,
+`false`, or `null` (unknown). It reports an asset **reachable** whenever it can
+prove that some internet host reaches an open port — including when the
+firewall admits only a narrow allowlist of public CIDRs, because "reachable
+from twelve specific public addresses" is still reachable as a matter of
+network fact.
+
+Whether such an allowlist is *tight enough* that the asset should not count as
+internet-reachable for scoring is a judgement about who controls those source
+addresses and how the allowlist is maintained. No evaluator can make it. This
+is the same reasoning, and the same rule, as the Kubernetes skill's
+`notInternetAccessibleIngressClasses`: **WAF, L7 filtering, OWASP rule sets,
+and DDoS protection alone never make a public endpoint non-internet-reachable.
+Only sufficiently strict IP whitelisting qualifies — though a WAF may be the
+component that implements that allowlist.**
+
+Consequences for this document:
+
+- `internetReachable: "false"` is an **attestation that outranks proven
+  evidence**, not a tie-breaker for uncertainty. Emit it only on explicit
+  operator confirmation of a specific, named allowlist. Never infer it, and
+  never emit it to quiet an `unknown`.
+- It is accepted in the four rule families and as a resource tag. It is
+  **refused at `defaults`**, because a document-wide "nothing here is
+  internet-reachable" is exactly the broad fail-open this schema's fail-loud
+  stance exists to prevent. At scope level, only `"true"` is accepted.
+- `internetReachable: "true"` needs no justification: it agrees with the
+  conservative direction and may be emitted from observed evidence.
+- TSW records the evaluator verdict the attestation displaced alongside the
+  justification, and renders the asset as operator-attested rather than
+  evidence-backed. Every `"false"` is visible and reviewable as a deviation;
+  write the justification accordingly.
+- Re-attestation is required whenever the allowlist widens. Carry a
+  `# manual-review:` line saying so on every rule that sets it.
+
 ## Fail-loud stance on broad defaults
 
 Both the scope block and global `defaults` may carry an optional
@@ -203,6 +269,12 @@ scope is unattested, the skill still emits fail-closed provisional values
 (class `"D"`, multiAgency `"true"`) with confidence and manual-review
 annotations rather than withholding the document — but it does not paper over
 unresolved SIP with a broad default.
+
+The same stance forbids a broad reachability attestation outright:
+`internetReachable: "false"` is rejected at `defaults` and at scope level and is
+accepted only on a rule that names the assets it covers. An uncertain
+reachability verdict is left to TSW to report as unknown; this document never
+converts uncertainty into a negative.
 
 ## Assignment-plan JSON shape
 
@@ -231,7 +303,9 @@ script source.
       "nameRules": [
         {"type": "storage.googleapis.com/Bucket", "match": "gcf-sources-*",
          "securityImpactProfile": "service-content.disposable-state.deferrable-work",
-         "multiAgency": null, "region": null, "matchTags": null,
+         "multiAgency": null, "internetReachable": null,
+         "internetReachableJustification": null,
+         "region": null, "matchTags": null,
          "confidence": "medium", "builtinPattern": "gcp-cloudfunctions-staging",
          "evidence": "provider-created transient artifact store",
          "manualReview": ["attest CR down with a direct vector only after verifying staged contents are non-sensitive",
@@ -257,11 +331,20 @@ Field notes:
 - **`securityImpactProfile`** at defaults/scope level is a canonical SIP string
   or `null` (prefer `null` and let rules fail loud).
 - **Rules** carry the family match fields (see the field table above),
-  `securityImpactProfile` and/or `multiAgency` (at least one non-null),
-  `confidence`, optional `builtinPattern` id, `evidence`, and a `manualReview`
-  list. `type` compares exactly; `match`, `matchTags` values, `network`,
+  `securityImpactProfile`, `multiAgency`, and/or `internetReachable` (at least
+  one non-null), `confidence`, optional `builtinPattern` id, `evidence`, and a
+  `manualReview` list. `type` compares exactly; `match`, `matchTags` values, `network`,
   `subnet`, and `region` use `fnmatch.fnmatchcase` globs. Unused fields may be
   `null` or omitted.
+- **`internetReachable`** is `"true"`, `"false"`, or `null` (the normal value),
+  and lives on **rules only**. `"false"` requires a non-empty
+  `internetReachableJustification` and is a render-time `ValueError` without
+  one. The plan is deliberately narrower than the YAML schema here: the schema
+  tolerates a scope-level `"true"`, but `render_cloud_config.py` and
+  `validate_cloud_config.py` both refuse `internetReachable` at `defaults` and
+  scope level, because a generator has no reason to emit a redundant `"true"`
+  and no licence to emit a broad `"false"`. See
+  [Operator-attested internet reachability](#operator-attested-internet-reachability).
 - **`archetypes`** is usually `{}`. A non-empty entry renders as
   `name: {description: ..., cr: H, ir: M, ar: L}`.
 
@@ -272,6 +355,7 @@ checks has top-level `scopes`, `inventoryTotal`, `assignments`,
 (`direct-vector` | `decision-trace` | `named-archetype`), `vector`,
 `resolutionSource` (the resolving rule, e.g. `nameRules[0]`, or `tag-override`
 / `scope-default` / `global-default`), `multiAgency`, `multiAgencySource`,
+`internetReachable`, `internetReachableSource`, `internetReachableJustification`,
 `status` (`operator-confirmed` | `agent-inferred` | `builtin-pattern`),
 `confidence`, `evidence`, `assumptions`, and `manualReview`. Non-high entries
 carry at least one concrete manual-review item. `summary` counts by scope,

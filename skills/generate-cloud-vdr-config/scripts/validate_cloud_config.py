@@ -222,13 +222,35 @@ def _required_field(family):
 
 def _rule_assigns(rule):
     """Attributes this rule sets: subset of {'securityImpactProfile',
-    'multiAgency'}."""
+    'multiAgency', 'internetReachable'}."""
     assigned = set()
     if rule.get("securityImpactProfile"):
         assigned.add("securityImpactProfile")
     if rule.get("multiAgency") is not None:
         assigned.add("multiAgency")
+    if rule.get("internetReachable") is not None:
+        assigned.add("internetReachable")
     return assigned
+
+
+def _validate_reachability(rule, where, errors):
+    """Validate one rule's internetReachable pair.
+
+    ``"false"`` retracts an evidence-backed TSW verdict rather than filling a
+    gap in one, so the justification is mandatory and is the text an assessor
+    reads in the audit view.
+    """
+    value = rule.get("internetReachable")
+    justification = (rule.get("internetReachableJustification") or "").strip()
+    if value not in (None, "true", "false"):
+        errors.append('%s internetReachable must be the quoted string "true" '
+                      'or "false", got %r' % (where, value))
+    if value == "false" and not justification:
+        errors.append("%s internetReachable \"false\" requires a non-empty "
+                      "internetReachableJustification" % where)
+    if justification and value != "false":
+        errors.append('%s internetReachableJustification is only meaningful '
+                      'with internetReachable "false"' % where)
 
 
 def _validate_sip_value(value, where, errors):
@@ -241,6 +263,9 @@ def _validate_sip_value(value, where, errors):
 
 def _validate_scope_shape(scope, key, errors):
     """Checks 1, 2, and 3 for a single plan scope."""
+    if scope.get("internetReachable") is not None:
+        errors.append("%s scope sets internetReachable; it may only be set on "
+                      "a rule that names the assets it covers" % key)
     if scope.get("securityImpactProfile"):
         _validate_sip_value(scope["securityImpactProfile"],
                             "%s scope default" % key, errors)
@@ -251,8 +276,9 @@ def _validate_scope_shape(scope, key, errors):
             if not rule.get(required):
                 errors.append("%s missing required %s field" % (where, required))
             if not _rule_assigns(rule):
-                errors.append("%s assigns neither securityImpactProfile nor "
-                              "multiAgency" % where)
+                errors.append("%s assigns none of securityImpactProfile, "
+                              "multiAgency, internetReachable" % where)
+            _validate_reachability(rule, where, errors)
             confidence = rule.get("confidence")
             if confidence not in VALID_CONFIDENCE:
                 errors.append("%s has invalid confidence %r" % (where, confidence))
