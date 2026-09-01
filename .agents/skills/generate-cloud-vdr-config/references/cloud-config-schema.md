@@ -184,6 +184,10 @@ identities.
 | GCP | `run.googleapis.com/Service` | Cloud Run service name |
 | GCP | `run.googleapis.com/Job` | Cloud Run job name |
 | GCP | `cloudfunctions.googleapis.com/Function` | Cloud Function name |
+| GCP | `pubsub.googleapis.com/Topic` | Pub/Sub topic name (last segment, not the full path) |
+| GCP | `pubsub.googleapis.com/Subscription` | Pub/Sub subscription name (last segment) |
+| GCP | `alloydb.googleapis.com/Cluster` | AlloyDB cluster id |
+| GCP | `alloydb.googleapis.com/Instance` | AlloyDB instance id |
 | AWS | `AWS::S3::Bucket` | S3 bucket name |
 | AWS | `AWS::EC2::Instance` | EC2 **instance ID** (Name-tag matching goes through `tagRules`) |
 | AWS | `AWS::RDS::DBInstance` | RDS DB identifier |

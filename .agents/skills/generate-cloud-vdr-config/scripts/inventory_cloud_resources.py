@@ -9,6 +9,7 @@ Standard library only (Python >= 3.8).
 import argparse
 import fnmatch
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,13 @@ GCP_ASSET_TYPES = [
     "run.googleapis.com/Job",
     "cloudfunctions.googleapis.com/CloudFunction",
     "cloudfunctions.googleapis.com/Function",
+    # Pub/Sub carries the payload and telemetry between the families above, and
+    # is a scoreable type downstream, so omitting it left real resources with no
+    # rule that could name them and no warning that they were missing.
+    "pubsub.googleapis.com/Topic",
+    "pubsub.googleapis.com/Subscription",
+    "alloydb.googleapis.com/Cluster",
+    "alloydb.googleapis.com/Instance",
 ]
 
 GCP_KEY_ALIASES = {
@@ -32,8 +40,19 @@ GCP_KEY_ALIASES = {
 
 
 def run_command(args):
-    """Run a read-only CLI command and return stdout; raise on nonzero exit."""
-    proc = subprocess.run(args, capture_output=True, text=True, check=False)
+    """Run a read-only CLI command and return stdout; raise on nonzero exit.
+
+    stdin is closed and prompts are disabled deliberately. When a service API is
+    disabled, gcloud offers to enable it and retry — an interactive prompt that
+    would hang an unattended run, and a mutating action this skill must never
+    take. With prompts off the command fails instead, and the caller records a
+    warning naming what could not be enumerated.
+    """
+
+    env = dict(os.environ)
+    env["CLOUDSDK_CORE_DISABLE_PROMPTS"] = "1"
+    proc = subprocess.run(args, capture_output=True, text=True, check=False,
+                          stdin=subprocess.DEVNULL, env=env)
     if proc.returncode != 0:
         raise RuntimeError("command failed: %s\n%s" % (" ".join(args), proc.stderr))
     return proc.stdout
@@ -262,12 +281,64 @@ def _gcp_service_inventory(project, runner, provider_patterns, warnings):
         first_line = str(exc).splitlines()[0] if str(exc) else ""
         warnings.append("Cloud Functions were not enumerated for project %s: %s" % (project, first_line))
 
+    try:
+        topics = _load_json(runner(["gcloud", "pubsub", "topics", "list",
+                                    "--project", project, "--format", "json"]))
+        for topic in topics:
+            topic_name = _last_segment(topic.get("name") or "")
+            topic_labels = topic.get("labels") or {}
+            resources.append(_build_resource(
+                "pubsub.googleapis.com/Topic", topic_name, None,
+                topic_labels if isinstance(topic_labels, dict) else {},
+                None, None, provider_patterns))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("Pub/Sub topics were not enumerated for project %s: %s" % (project, first_line))
+
+    try:
+        subscriptions = _load_json(runner(["gcloud", "pubsub", "subscriptions", "list",
+                                           "--project", project, "--format", "json"]))
+        for subscription in subscriptions:
+            sub_name = _last_segment(subscription.get("name") or "")
+            sub_labels = subscription.get("labels") or {}
+            resources.append(_build_resource(
+                "pubsub.googleapis.com/Subscription", sub_name, None,
+                sub_labels if isinstance(sub_labels, dict) else {},
+                None, None, provider_patterns))
+    except RuntimeError as exc:
+        first_line = str(exc).splitlines()[0] if str(exc) else ""
+        warnings.append("Pub/Sub subscriptions were not enumerated for project %s: %s" % (project, first_line))
+
+    # ``--region=-`` is the all-regions form. A project with the AlloyDB API
+    # disabled returns an empty list rather than failing, which is the correct
+    # answer: no API, no clusters.
+    for kind, asset_type in (("clusters", "alloydb.googleapis.com/Cluster"),
+                             ("instances", "alloydb.googleapis.com/Instance")):
+        try:
+            entries = _load_json(runner(["gcloud", "alloydb", kind, "list",
+                                         "--project", project, "--region", "-",
+                                         "--format", "json"]))
+            for entry in entries:
+                full_name = entry.get("name") or ""
+                region = None
+                if "/locations/" in full_name:
+                    region = full_name.split("/locations/", 1)[1].split("/", 1)[0]
+                labels = entry.get("labels") or {}
+                resources.append(_build_resource(
+                    asset_type, _last_segment(full_name), region,
+                    labels if isinstance(labels, dict) else {},
+                    None, None, provider_patterns))
+        except RuntimeError as exc:
+            first_line = str(exc).splitlines()[0] if str(exc) else ""
+            warnings.append("AlloyDB %s were not enumerated for project %s: %s"
+                            % (kind, project, first_line))
+
     return resources
 
 
 def _asset_fallback_warning(project, error_line):
     message = ("Cloud Asset API was not used for project %s; the per-service "
-               "fallback covers buckets, SQL, compute, BigQuery, Cloud Run, and Cloud Functions."
+               "fallback covers buckets, SQL, AlloyDB, compute, BigQuery, Cloud Run, Cloud Functions, and Pub/Sub."
                % project)
     if error_line:
         message += " Cloud Asset API error: %s" % error_line
