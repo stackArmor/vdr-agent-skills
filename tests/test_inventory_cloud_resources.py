@@ -147,6 +147,10 @@ class GcpInventoryTests(unittest.TestCase):
             ("run services list", [{"metadata": {"name": "web-svc", "labels": {"env": "prod"}}}]),
             ("run jobs list", [{"metadata": {"name": "batch-job", "labels": {"env": "prod"}}}]),
             ("functions list", [{"name": "projects/acme/locations/us-central1/functions/api-fn", "labels": {}}]),
+            ("pubsub topics list", []),
+            ("pubsub subscriptions list", []),
+            ("alloydb clusters list", []),
+            ("alloydb instances list", []),
         ])
         scope = self.mod.inventory_gcp("acme-prod", self.patterns,
                                        runner=runner, use_asset_api=False)
@@ -159,6 +163,82 @@ class GcpInventoryTests(unittest.TestCase):
         self.assertIn("run.googleapis.com/Service", by_type)
         self.assertIn("run.googleapis.com/Job", by_type)
         self.assertIn("cloudfunctions.googleapis.com/Function", by_type)
+
+    def test_fallback_enumerates_pubsub_and_alloydb(self):
+        """Both families are scoreable downstream, so omitting them was silent loss.
+
+        A resource the inventory never sees cannot be assigned, cannot appear in
+        the coverage equation, and produces no warning — it is simply absent.
+        """
+
+        runner = fake_runner([
+            ("auth list", [{"account": "ops@acme.example", "status": "ACTIVE"}]),
+            ("storage buckets list", []),
+            ("sql instances list", []),
+            ("compute instances list", []),
+            ("bq ", []),
+            ("run services list", []),
+            ("run jobs list", []),
+            ("functions list", []),
+            ("pubsub topics list", [{"name": "projects/acme/topics/events", "labels": {"env": "prod"}}]),
+            ("pubsub subscriptions list", [{"name": "projects/acme/subscriptions/events-sub"}]),
+            ("alloydb clusters list",
+             [{"name": "projects/acme/locations/us-east4/clusters/core", "labels": {}}]),
+            ("alloydb instances list",
+             [{"name": "projects/acme/locations/us-east4/clusters/core/instances/primary"}]),
+        ])
+        scope = self.mod.inventory_gcp("acme-prod", self.patterns,
+                                       runner=runner, use_asset_api=False)
+
+        by_type = {r["type"]: r for r in scope["resources"]}
+        self.assertEqual("events", by_type["pubsub.googleapis.com/Topic"]["identifier"])
+        self.assertEqual({"env": "prod"}, by_type["pubsub.googleapis.com/Topic"]["tags"])
+        self.assertEqual("events-sub", by_type["pubsub.googleapis.com/Subscription"]["identifier"])
+        self.assertEqual("core", by_type["alloydb.googleapis.com/Cluster"]["identifier"])
+        self.assertEqual("us-east4", by_type["alloydb.googleapis.com/Cluster"]["region"])
+        self.assertEqual("primary", by_type["alloydb.googleapis.com/Instance"]["identifier"])
+        # Nothing here should have been reported as un-enumerated. Match the
+        # specific failure wording: the degraded-inventory warning legitimately
+        # names both families in the list of what the fallback covers.
+        self.assertFalse([w for w in scope["warnings"] if "were not enumerated" in w])
+
+    def test_asset_api_requests_every_scoreable_family(self):
+        """The Asset API path and the fallback must agree on what is in scope.
+
+        They are two routes to the same baseline; a family present in one and
+        absent from the other makes coverage depend on whether the Asset API
+        happened to be enabled.
+        """
+
+        for asset_type in ("pubsub.googleapis.com/Topic",
+                           "pubsub.googleapis.com/Subscription",
+                           "alloydb.googleapis.com/Cluster",
+                           "alloydb.googleapis.com/Instance"):
+            self.assertIn(asset_type, self.mod.GCP_ASSET_TYPES)
+
+    def test_run_command_disables_prompts_and_closes_stdin(self):
+        """gcloud offers to ENABLE a disabled API interactively.
+
+        Unattended that prompt hangs the run, and this skill must never take a
+        mutating action, so prompts are off and stdin is closed.
+        """
+
+        import subprocess as sp
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured.update(kwargs)
+            return sp.CompletedProcess(args, 0, stdout="[]", stderr="")
+
+        original = self.mod.subprocess.run
+        self.mod.subprocess.run = fake_run
+        try:
+            self.mod.run_command(["gcloud", "alloydb", "clusters", "list"])
+        finally:
+            self.mod.subprocess.run = original
+
+        self.assertEqual(sp.DEVNULL, captured.get("stdin"))
+        self.assertEqual("1", (captured.get("env") or {}).get("CLOUDSDK_CORE_DISABLE_PROMPTS"))
 
     def test_merge_scopes_summary(self):
         scope = {"provider": "gcp", "project": "p", "provenance": {},
