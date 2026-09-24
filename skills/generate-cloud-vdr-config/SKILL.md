@@ -21,7 +21,14 @@ this file. Read `references/cloud-config-schema.md` and
   `gcloud projects list`, `gcloud asset list`. Never run any mutating verb and
   never apply anything to a cloud account.
 - Write only under `./vdr-cloud-output/`. The operator reviews and versions the
-  output manually or through GitOps.
+  output manually or through GitOps. Always start with a clean directory: remove
+  or archive any existing `./vdr-cloud-output/` before a run so that stale
+  `scope-*.json` files do not contaminate the inventory merge, and artifacts from
+  prior runs do not influence the current evaluation.
+- For a fresh evaluation, do not read or adopt existing `assignment-plan.json`
+  or `vdr-cloud.yaml` files. Run the full operator interview fresh for Class,
+  agency scope, and consequence; never treat historical artifacts or prior runs
+  as current operator attestations.
 - **`vdr-cloud.yaml` is a proposed integration contract. `trivy-plugin-vdr`
   does not consume it today.** State this in every handoff, exactly as the
   `TerraformAssetClassifications` sidecar does. Until plugin-side consumption
@@ -69,6 +76,13 @@ all 27 vector combinations, and examples. The governed trace registry and its
 
 ### 1. Establish scopes
 
+Ensure `./vdr-cloud-output/` is empty or newly created before starting:
+
+```bash
+mkdir -p ./vdr-cloud-output
+# If re-running, remove or archive previous run artifacts first
+```
+
 Ask whether this is a single- or multi-scope run. Each confirmed GCP project or
 AWS account becomes one `scopes:` entry.
 
@@ -107,7 +121,7 @@ python3 <skill-dir>/scripts/inventory_cloud_resources.py \
   --output ./vdr-cloud-output/scope-aws-<account>.json
 ```
 
-Merge the per-scope files into the coverage baseline:
+Merge only the per-scope files generated during this run into the coverage baseline:
 
 ```bash
 python3 <skill-dir>/scripts/inventory_cloud_resources.py \
