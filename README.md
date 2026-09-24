@@ -102,6 +102,8 @@ Class and multi-agency defaults.
 
 ### Claude Code
 
+Add the marketplace and install the plugin:
+
 ```
 /plugin marketplace add stackArmor/vdr-agent-skills
 /plugin install trivy-plugin-vdr-skills
@@ -110,12 +112,63 @@ Class and multi-agency defaults.
 Then invoke a skill by name, or describe what you need ("assess the system and
 agency security objectives" or "set up the FedRAMP scoring ConfigMap").
 
-### Antigravity, Codex, and other agents
+### Antigravity (AGY)
 
-The `.agents/skills/` directory contains the same skills for agents that
-discover skills there (Antigravity auto-discovers them when run inside the
-repo; confirm with `/skills`). The skill content is identical — only the
-discovery path differs.
+Antigravity supports both project-local auto-discovery and global plugin installation:
+
+- **Project / Workspace Level (Auto-discovery):**
+  When running AGY inside this repository or any project containing the `.agents/skills/` directory, AGY automatically discovers all skills. Confirm discovered skills in chat using `/skills`.
+
+- **Global Installation (Plugin):**
+  To make the skills available across all projects and workspaces, clone or symlink the repository into your global AGY plugins directory:
+  ```bash
+  # Option A: Clone directly into plugins
+  git clone https://github.com/stackArmor/vdr-agent-skills.git ~/.gemini/config/plugins/vdr-agent-skills
+
+  # Option B: Symlink from an existing local clone
+  ln -s /path/to/vdr-agent-skills ~/.gemini/config/plugins/vdr-agent-skills
+  ```
+
+- **Global Skills Directory:**
+  Alternatively, you can copy or symlink the skills into `~/.gemini/config/skills/`:
+  ```bash
+  mkdir -p ~/.gemini/config/skills
+  cp -r .agents/skills/* ~/.gemini/config/skills/
+  ```
+
+Restart AGY or start a new session, then run `/skills` to verify that the skills are loaded.
+
+### OpenAI Codex (CLI and App)
+
+Codex supports skills via universal agent discovery, local project directories, and global configuration:
+
+- **Project / Workspace Level:**
+  Codex automatically discovers skills adhering to the Agent Skills standard located in `.agents/skills/` (or `.codex/skills/`) at the repository root. When working in this repository or copying `.agents/skills/` into your target project, skills are immediately active.
+
+- **Global Installation:**
+  Copy or symlink the skills into your user-level Codex skills directory:
+  ```bash
+  mkdir -p ~/.codex/skills
+  cp -r .agents/skills/* ~/.codex/skills/
+  ```
+
+- **Interactive Skill Installer (Codex CLI):**
+  In the interactive Codex CLI, type `$` to open the action menu, select **Skill Installer**, and paste the repository URL:
+  ```
+  https://github.com/stackArmor/vdr-agent-skills
+  ```
+
+- **Universal Skills CLI (`npx skills`):**
+  You can also install using the universal skills CLI manager:
+  ```bash
+  npx skills add stackArmor/vdr-agent-skills --agent codex
+  ```
+
+Restart your Codex session after installation so the runtime indexes the new skills.
+
+### Other Agents (Universal Agent Standard)
+
+The repository provides all skills under `.agents/skills/` following the open Agent Skills specification (`<skill>/SKILL.md`). Any agent supporting the `.agents/skills/` directory standard will automatically discover them when operating in the workspace.
 
 ## Requirements
 
