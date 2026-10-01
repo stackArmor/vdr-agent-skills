@@ -114,26 +114,24 @@ agency security objectives" or "set up the FedRAMP scoring ConfigMap").
 
 ### Antigravity (AGY)
 
-Antigravity supports both project-local auto-discovery and global plugin installation:
+Antigravity supports both project-local auto-discovery and native plugin installation:
 
 - **Project / Workspace Level (Auto-discovery):**
   When running AGY inside this repository or any project containing the `.agents/skills/` directory, AGY automatically discovers all skills. Confirm discovered skills in chat using `/skills`.
 
 - **Global Installation (Plugin):**
-  To make the skills available across all projects and workspaces, clone or symlink the repository into your global AGY plugins directory:
+  Install the plugin natively using the `agy` CLI:
   ```bash
-  # Option A: Clone directly into plugins
-  git clone https://github.com/stackArmor/vdr-agent-skills.git ~/.gemini/config/plugins/vdr-agent-skills
+  # Install directly from the GitHub repository
+  agy plugin install https://github.com/stackArmor/vdr-agent-skills
 
-  # Option B: Symlink from an existing local clone
-  ln -s /path/to/vdr-agent-skills ~/.gemini/config/plugins/vdr-agent-skills
+  # Or install from a local clone / directory
+  agy plugin install /path/to/vdr-agent-skills
   ```
 
-- **Global Skills Directory:**
-  Alternatively, you can copy or symlink the skills into `~/.gemini/config/skills/`:
-  ```bash
-  mkdir -p ~/.gemini/config/skills
-  cp -r .agents/skills/* ~/.gemini/config/skills/
+  You can also install it interactively in the AGY chat session:
+  ```
+  /plugin install https://github.com/stackArmor/vdr-agent-skills
   ```
 
 Restart AGY or start a new session, then run `/skills` to verify that the skills are loaded.

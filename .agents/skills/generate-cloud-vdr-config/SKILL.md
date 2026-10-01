@@ -83,7 +83,7 @@ mkdir -p ./vdr-cloud-output
 # If re-running, remove or archive previous run artifacts first
 ```
 
-Ask whether this is a single- or multi-scope run. Each confirmed GCP project or
+Ask whether this is a single-cloud account/project or multi-cloud account/project run. Each confirmed GCP project or
 AWS account becomes one `scopes:` entry.
 
 - **AWS:** ask which named CLI profiles to use, one per account. Validate each
