@@ -8,7 +8,7 @@ description: Generate or update the central vdr-cloud.yaml CloudResourceScoringC
 Interview the operator, inventory the selected GCP projects and AWS accounts
 read-only, and write the central `vdr-cloud.yaml` assignment surface plus an
 inventory baseline and a coverage ledger. This is the cloud analogue of
-`generate-vdr-configmap`: it does for buckets, VMs, managed SQL, and the other
+`generate-k8s-vdr-configmap`: it does for buckets, VMs, managed SQL, and the other
 CIS Foundations-addressed cloud families what that skill does for Kubernetes
 workloads. In commands below, resolve `<skill-dir>` to the directory containing
 this file. Read `references/cloud-config-schema.md` and
@@ -66,7 +66,7 @@ optional catalog. Prefer a compositional trace. Provider label encodings (GCP
 actual cloud tags and are decoded at discovery — they never appear inside
 `vdr-cloud.yaml`.
 
-Read `../generate-vdr-configmap/references/archetype-guide.md` completely before
+Read `../generate-k8s-vdr-configmap/references/archetype-guide.md` completely before
 assigning profiles. It defines direct vectors, the optional archetype system,
 allowed trace reasons, the five-question interview, availability calibration,
 all 27 vector combinations, and examples. The governed trace registry and its
@@ -150,16 +150,32 @@ default trace and inherit its manual-review notes; read
 
 Cluster the remaining resources into coherent groups (type + naming pattern +
 shared tags + network), then run the archetype guide's five-question interview
-per group. Read `../generate-vdr-configmap/references/archetype-guide.md`
+per group. Read `../generate-k8s-vdr-configmap/references/archetype-guide.md`
 completely first. At most five questions per group, with evidence-backed
 best-effort inference and confidence marking when the operator delegates.
 
-Environment names never establish impact — classify a nonproduction resource by
-its intended production data and consequence. HA never lowers AR — evaluate the
-consequence of the resource class being logically unavailable across all
-replicas; redundancy is a mitigating control outside the requirement vector.
-Confidence describes evidence quality; it never lowers CR/IR/AR. When several
-outcomes remain credible, choose the strongest and state what would change it.
+- **Environment intent (Staging vs. Production):** In ThreatAlert (TSW), staging
+  and non-production accounts/projects are tracked separately from production
+  and can be excluded from official FedRAMP authorization package reporting.
+  Staging findings do not count against official FedRAMP compliance. However,
+  mapping staging/non-production resources with production-equivalent profiles
+  is strongly recommended so teams triage and remediate vulnerabilities under the
+  exact same PAIN severity and timeline pressures they will face in production.
+  If the operator chooses an isolated non-production profile, assign low-impact
+  values (`nonproduction` / `cr-l_ir-l_ar-l`). Environment names alone never
+  establish low impact.
+- **Multi-Agency scope:** Explain that `multiAgency` is largely an architectural
+  consequence of their multi-tenancy strategy (dedicated single-tenant deployment
+  vs shared multi-tenant infrastructure). After setting the scope- or global-level
+  baseline, follow up by asking if specific VPCs/subnets, shared databases, or
+  storage buckets deviate from that default, attaching `multiAgency: true/false`
+  to the narrowest rule covering those exceptions.
+- **Availability calibration:** HA never lowers AR — evaluate the consequence
+  of the resource class being logically unavailable across all replicas;
+  redundancy is a mitigating control outside the requirement vector.
+- **Confidence:** Confidence describes evidence quality; it never lowers
+  CR/IR/AR. When several outcomes remain credible, choose the strongest and
+  state what would change it.
 
 ### 4b. Ask once about strict IP allowlists
 
@@ -171,17 +187,36 @@ Whether such an allowlist is tight enough that the asset should not count as
 internet-reachable is a judgement no evaluator can make, so ask for it.
 
 Ask once, for the whole run: *are any of these assets reachable from the public
-internet only through a strict source-IP allowlist that you maintain?* Then, for
-each asset class the operator names:
+internet only through a strict source-IP allowlist that you maintain?*
+- *Provide context if requested:*
+  1. *Operator declaration vs. hard heuristics:* Automated scanners cannot
+     determine whether a list of source IPs is "safe." Hardcoded heuristic limits
+     on IP counts or CIDR mask sizes (e.g. requiring `/32`s or rejecting `/24`s)
+     fail in practice because federal agency customers or enterprise tenants
+     often legitimately own an entire public `/24` or larger dedicated to
+     corporate or campus VPN egress. The operator must make the authoritative
+     declaration that the source IPs represent an approved, restricted
+     population rather than general public access.
+  2. *FedRAMP VDR PAIN timeline impact:* Setting `internetReachable: "false"`
+     moves findings from the IRV (Internet Reachable Vulnerability) column to the
+     NIRV (Non-Internet Reachable Vulnerability) column in the FedRAMP VDR
+     PAIN-based remediation timeline matrix. A false declaration creates a
+     false NIRV negative that 3PAO assessors will cite.
+  3. *No raw CIDRs needed:* The operator does not need to supply a dump of raw
+     CIDRs. They only need to name the allowlist, state where it is enforced
+     (e.g., security group, firewall rule, or WAF IP-set), and attest that it is
+     strictly maintained.
+  4. *What qualifies vs. what doesn't:* Only strict source-IP allowlists qualify
+     (even when enforced on a WAF). WAF managed rule sets (OWASP Core), DDoS
+     protections (Cloudflare, AWS Shield), API rate limiting, basic
+     authentication, or geo-blocking alone NEVER make a public endpoint
+     non-internet-reachable.
 
+Then, for each asset class the operator confirms:
 - Emit `internetReachable: "false"` with a non-empty
   `internetReachableJustification` on the narrowest rule that covers exactly
   those assets. It goes on a rule — never at `defaults` or scope level, which
   both scripts refuse.
-- **WAF, L7 filtering, OWASP rule sets, and DDoS protection alone never
-  qualify.** Only sufficiently strict IP whitelisting does, though a WAF may be
-  the component that implements the allowlist. If the operator offers a WAF as
-  the reason, say this and ask again for the allowlist.
 - Write the justification for an assessor: name the allowlist, say where it is
   enforced, and say what it admits. TSW publishes it verbatim next to the
   evaluated verdict the attestation displaced.

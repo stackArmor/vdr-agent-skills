@@ -11,13 +11,13 @@ from pathlib import Path
 
 REASON_CODES = (
     Path(__file__).resolve().parent.parent.parent
-    / "generate-vdr-configmap"
+    / "generate-k8s-vdr-configmap"
     / "scripts"
     / "reason_codes.py"
 )
 PROFILE_GUIDE = (
     Path(__file__).resolve().parent.parent.parent
-    / "generate-vdr-configmap"
+    / "generate-k8s-vdr-configmap"
     / "references"
     / "archetype-guide.md"
 )

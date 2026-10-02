@@ -236,12 +236,22 @@ network fact.
 
 Whether such an allowlist is *tight enough* that the asset should not count as
 internet-reachable for scoring is a judgement about who controls those source
-addresses and how the allowlist is maintained. No evaluator can make it. This
-is the same reasoning, and the same rule, as the Kubernetes skill's
-`notInternetAccessibleIngressClasses`: **WAF, L7 filtering, OWASP rule sets,
-and DDoS protection alone never make a public endpoint non-internet-reachable.
-Only sufficiently strict IP whitelisting qualifies — though a WAF may be the
-component that implements that allowlist.**
+addresses and how the allowlist is maintained. Hardcoded heuristic limits on IP
+counts or CIDR mask sizes (e.g. requiring `/32`s or banning `/24`s) fail because
+federal agency customers or enterprise tenants often legitimately own an entire
+public `/24` or larger dedicated to corporate or campus VPN egress. The operator
+must make the authoritative declaration that the source IPs represent an
+approved, restricted population rather than general public access.
+
+Setting `internetReachable: "false"` moves findings associated with that asset
+from the **IRV (Internet Reachable Vulnerability)** column to the **NIRV
+(Non-Internet Reachable Vulnerability)** column under the FedRAMP VDR PAIN-based
+remediation timeline matrix. A false declaration creates a false NIRV negative.
+This is the same reasoning, and the same rule, as the
+`generate-k8s-vdr-configmap` skill's `notInternetAccessibleIngressClasses`:
+**WAF, L7 filtering, OWASP rule sets, and DDoS protection alone never make a
+public endpoint non-internet-reachable. Only sufficiently strict IP allowlisting
+qualifies — though a WAF may be the component that implements that allowlist.**
 
 Consequences for this document:
 

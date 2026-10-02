@@ -34,7 +34,7 @@ compositional decision trace:
 <disclosure>.<trusted-change>.<dependency>
 ```
 
-Read `../generate-vdr-configmap/references/archetype-guide.md` completely before
+Read `../generate-k8s-vdr-configmap/references/archetype-guide.md` completely before
 classifying any asset. It governs the reason registries, five-question
 interview, CR/IR/AR derivation, availability rules, and exact value length.
 

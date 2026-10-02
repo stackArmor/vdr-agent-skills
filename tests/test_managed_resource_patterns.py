@@ -6,8 +6,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CATALOG = (REPO_ROOT / "skills" / "generate-cloud-vdr-config"
            / "references" / "managed-resource-patterns.json")
-REASON_CODES = (REPO_ROOT / "skills" / "generate-vdr-configmap"
-                / "scripts" / "reason_codes.py")
+REASON_CODES = (
+    REPO_ROOT
+    / "skills"
+    / "generate-k8s-vdr-configmap"
+    / "scripts"
+    / "reason_codes.py"
+)
 
 
 def load_reason_codes():

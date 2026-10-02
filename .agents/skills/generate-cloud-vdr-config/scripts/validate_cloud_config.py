@@ -51,9 +51,11 @@ GLOBAL_TYPES = (
 
 _HERE = Path(__file__).resolve().parent
 _SKILLS = _HERE.parent.parent
-_REASON_CODES = _SKILLS / "generate-vdr-configmap" / "scripts" / "reason_codes.py"
+_REASON_CODES = (
+    _SKILLS / "generate-k8s-vdr-configmap" / "scripts" / "reason_codes.py"
+)
 _PROFILE_GUIDE = (
-    _SKILLS / "generate-vdr-configmap" / "references" / "archetype-guide.md"
+    _SKILLS / "generate-k8s-vdr-configmap" / "references" / "archetype-guide.md"
 )
 _RENDER_PATH = _HERE / "render_cloud_config.py"
 

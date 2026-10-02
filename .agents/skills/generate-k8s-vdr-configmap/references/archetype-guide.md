@@ -82,8 +82,16 @@ first.
 
 Ask these questions for one workload or a coherent group:
 
-1. **Environment intent:** Should this environment mirror production impact,
-   or is it explicitly isolated and low impact?
+1. **Environment intent (Staging vs. Production):** Should this environment mirror
+   production impact (recommended for triage and promotion parity), or is it
+   explicitly isolated and low impact?
+   - *Context:* In ThreatAlert (TSW), staging and non-production scopes are
+     tracked separately and can be excluded from official FedRAMP reporting
+     packages (such as monthly ConMon / POA&M packages). Non-production findings
+     do not count against official FedRAMP compliance. However, setting
+     production-equivalent profiles in non-production is recommended so teams
+     triage vulnerabilities under identical PAIN timelines and severity before
+     code promotes to production.
 2. **Disclosure:** What data, credentials, or administrative capability could
    compromise expose?
 3. **Trusted change:** What record, action, identity, configuration, or control
@@ -93,10 +101,13 @@ Ask these questions for one workload or a coherent group:
 5. **Consequence:** Ignoring HA and failover, would that loss be limited,
    serious, severe, recovery-critical, or protection-critical?
 
-Class and `multiAgency` are separate configuration decisions. Record operator
-attestations when provided and clearly mark provisional agent inferences when
-they are not. Population does not set `multiAgency`, and `multiAgency` does not
-select a security-impact profile.
+Class and `multiAgency` are separate configuration decisions. `multiAgency`
+reflects your multi-tenancy architecture (single dedicated agency vs. shared
+multi-tenant infrastructure). Record operator attestations when provided and
+clearly mark provisional agent inferences when they are not. Population does not
+set `multiAgency`, and `multiAgency` does not select a security-impact profile.
+Follow up cluster-wide defaults by confirming if specific namespaces, shared
+services, or data stores deviate from the default.
 
 An environment name is not evidence of low impact. When the operator chooses
 production equivalence, use production data types, authority, and outage

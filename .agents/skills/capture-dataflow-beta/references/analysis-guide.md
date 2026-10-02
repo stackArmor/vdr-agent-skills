@@ -1,4 +1,4 @@
-# Agentic analysis guide — capture-dataflow
+# Agentic analysis guide — capture-dataflow (Beta)
 
 The script is deterministic discovery; **you** turn its bundle into a reviewed,
 operator-attested dataflow map. Work through every section below with the user after

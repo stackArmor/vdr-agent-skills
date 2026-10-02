@@ -14,7 +14,7 @@ selectively adds reviewable metadata to CIS Foundations-mapped cloud assets.
 
 ## The skills
 
-### `capture-dataflow` → the `vdr-dataflow` ConfigMap (beta)
+### `capture-dataflow-beta` → the `vdr-dataflow` ConfigMap (beta)
 
 > **Status:** This skill is in beta and may be deprecated. Treat its schema and
 > generated artifacts as experimental analysis aids rather than a stable
@@ -57,7 +57,7 @@ The ceiling may be copied into `vdr-fedramp` as
 `securityRequirementsCeiling` or passed to trivy-plugin-vdr with
 `--security-requirements-ceiling`. Using it is optional.
 
-### `generate-vdr-configmap` → the SIP-based `vdr-fedramp` ConfigMap
+### `generate-k8s-vdr-configmap` → the SIP-based `vdr-fedramp` ConfigMap
 
 Interviews the operator to capture the canonical scoring attestations: the
 FedRAMP **Certification Class**, **agency scope** (single/multi-agency), and
@@ -172,7 +172,7 @@ The repository provides all skills under `.agents/skills/` following the open Ag
 
 | Tool | Notes |
 |------|-------|
-| `kubectl` (authenticated) | For `generate-vdr-configmap` and `capture-dataflow`; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `kubectl` (authenticated) | For `generate-k8s-vdr-configmap` and `capture-dataflow-beta`; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
 | `gcloud` / `aws` CLIs (authenticated, read-only) | For `generate-cloud-vdr-config` only. Read-only access is sufficient — `list`/`describe`/`get` and `sts get-caller-identity`; the skill never runs a mutating verb or applies anything to a cloud account. |
 | `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
 | `python3` (>= 3.8) | For the inventory/capture scripts. Standard library only — no `pip install`. |

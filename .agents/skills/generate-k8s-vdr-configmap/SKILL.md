@@ -1,9 +1,9 @@
 ---
-name: generate-vdr-configmap
+name: generate-k8s-vdr-configmap
 description: Generate or update the canonical trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and independently dimensional CR/IR/AR asset security-impact profiles; support direct vectors, compositional decision traces, or named archetypes; inventory Kubernetes workloads read-only, make evidence-backed best-effort assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, validate complete coverage, and never apply anything.
 ---
 
-# Generate VDR ConfigMap
+# Generate Kubernetes VDR ConfigMap
 
 Interview the operator, inspect the selected Kubernetes cluster read-only, and
 write the governed scoring artifacts consumed by `trivy-plugin-vdr`.
@@ -92,13 +92,29 @@ Map the existing FedRAMP authorization to Certification Class:
 | FedRAMP High | D |
 
 Ask the operator to confirm the Class. Then ask for the cluster-wide
-`multiAgency` default:
+`multiAgency` default, explaining that this is largely an architectural
+consequence of their multi-tenancy strategy:
 
-- `true`: compromise can affect several agencies from this cluster.
-- `false`: single-agency deployment.
+- `false` (single-agency): dedicated deployment isolated to a single agency or
+  customer. A compromise within this cluster affects only that specific agency.
+- `true` (multi-agency): shared multi-tenant infrastructure serving multiple
+  agencies. A compromise or pod breakout could cross tenant boundaries,
+  elevating sensitivity in FedRAMP VDR scoring formulas.
 
-Do not infer this flag from workload population. Namespace and workload
-`vdr.fedramp.io/multi-agency` labels remain available for exceptions.
+If the operator requests context on why this matters, explain that `multiAgency`
+governs whether vulnerability severity formulas apply a cross-tenant exposure
+multiplier.
+
+Follow up by asking if specific namespaces, shared services, or data stores
+differ from this cluster default:
+- For single-agency defaults: ask whether shared ingress controllers, central
+  auth proxies, or shared telemetry brokers process multi-agency traffic.
+- For multi-agency defaults: ask whether dedicated tenant namespaces or
+  isolated single-agency workloads exist.
+
+Record operator attestations for any exceptions and emit corresponding
+workload- or namespace-level `vdr.fedramp.io/multi-agency` labels or ConfigMap
+rules. Do not infer this flag from workload population alone.
 
 If either value remains unanswered, infer it from explicit authorization or
 tenant evidence when available. Otherwise emit fail-closed provisional values
@@ -154,8 +170,20 @@ third-party, and application workloads in the same central assignment plan.
 
 Ask no more than five questions for an asset or a coherent workload group:
 
-1. Should this environment use production-equivalent values, or is it an
+1. **Environment intent (Staging vs. Production):** Should this environment use
+   production-equivalent values (recommended for parity and triage), or is it an
    intentionally isolated low-impact environment?
+   - *Provide context if requested:* In ThreatAlert (TSW), staging and
+     non-production clusters/scopes are tracked separately from production and
+     can be excluded from official FedRAMP authorization package reporting (such
+     as monthly ConMon / POA&M deliverables). Staging vulnerabilities do not
+     breach official compliance. However, mapping staging and non-production
+     workloads with production-equivalent profiles is strongly recommended so
+     engineering and DevOps teams triage and remediate vulnerabilities under the
+     exact same PAIN severity and SLA timelines they will encounter in
+     production, preventing surprises upon promotion.
+   - If the operator confirms an isolated non-production environment, classify
+     workloads with truly low-impact traces (`nonproduction` / `cr-l_ir-l_ar-l`).
 2. What could disclosure expose?
 3. What trusted action, record, identity, or control could compromise alter?
 4. Who is affected by complete logical loss: CSP operators, a bounded user
@@ -305,16 +333,53 @@ CronJob and suppresses its generated Jobs. Do not rely on
 `spec.jobTemplate.metadata.labels`, which the plugin does not score. Put an
 override directly in one-shot and Helm-hook Job manifests.
 
-Ask once whether any Ingress/Gateway class is fronted by a load balancer built
-outside Kubernetes. Include `internetAccessibleIngressClasses` or
-`internetAccessibleGatewayClasses` for high-confidence observed or
-operator-confirmed reachable classes. If an operator confirms a class has
-sufficient IP whitelisting to be not internet reachable, emit it under
-`notInternetAccessibleIngressClasses` or
+Ask once whether any Ingress or Gateway class is fronted by an external load
+balancer (e.g. AWS ALB, GCP HTTPS LB) or API gateway (e.g. Apigee, Kong)
+provisioned outside Kubernetes that accepts traffic from the public internet:
+- *Provide context if requested:* Kubernetes cluster manifests alone cannot see
+  cloud infrastructure provisioned outside the cluster. An in-cluster Ingress
+  controller or Service may appear private or internal, yet an external public
+  load balancer forwards internet traffic directly to it. Without operator
+  confirmation, the scanner would falsely classify workloads behind that ingress
+  as non-internet-reachable, placing their findings into the NIRV (Non-Internet
+  Reachable Vulnerability) column instead of the IRV (Internet Reachable
+  Vulnerability) column under the FedRAMP VDR PAIN-based remediation timeline
+  matrix.
+- Include `internetAccessibleIngressClasses` or
+  `internetAccessibleGatewayClasses` for high-confidence observed or
+  operator-confirmed reachable classes.
+
+Ask once whether any public-facing endpoints or ingress classes are restricted
+exclusively to an approved, maintained source-IP allowlist:
+- *Provide context if requested:*
+  1. *Operator declaration vs. hard heuristics:* Automated scanners cannot
+     determine whether a list of source IPs is "safe." Hardcoded heuristic limits
+     on IP counts or CIDR mask sizes (e.g., requiring `/32`s or rejecting `/24`s)
+     fail in practice because federal agency customers or enterprise tenants
+     often legitimately own an entire public `/24` or larger dedicated to
+     corporate or campus VPN egress. The operator must make the authoritative
+     declaration that the source IPs represent an approved, restricted
+     population rather than general public access.
+  2. *FedRAMP VDR PAIN timeline impact:* Confirming an endpoint is not internet
+     reachable moves its findings from the IRV column to the NIRV column in the
+     FedRAMP VDR PAIN remediation timeline matrix. A false declaration creates a
+     false NIRV negative that 3PAO assessors will cite.
+  3. *No raw CIDRs needed:* The operator does not need to provide a dump of raw
+     CIDRs. They only need to name the allowlist, state where it is enforced
+     (e.g., security group, firewall rule, or WAF IP-set), and attest that it is
+     strictly maintained.
+  4. *What qualifies vs. what doesn't:* Only strict source-IP allowlists qualify
+     (even when enforced by a WAF). WAF managed rule sets (OWASP Core), DDoS
+     protections (Cloudflare, AWS Shield), API rate limiting, basic
+     authentication, or geo-blocking alone NEVER make a public endpoint
+     non-internet-reachable.
+
+If an operator confirms a class has sufficient source-IP allowlisting to be not
+internet reachable, emit it under `notInternetAccessibleIngressClasses` or
 `notInternetAccessibleGatewayClasses` and document immediately above that
 ConfigMap key that WAF, L7, OWASP, or DDoS protections alone do not make a
 public load balancer non-internet-reachable; only sufficiently strict IP
-whitelisting qualifies, though a WAF may implement that allowlist. When an
+allowlists qualify, though a WAF may implement that allowlist. When an
 attested class is implemented by a directly exposed LoadBalancer Service, also
 emit that exact `namespace/name` under `notInternetAccessibleServices`; never
 infer the Service-to-class relationship from a name alone. Negative class lists

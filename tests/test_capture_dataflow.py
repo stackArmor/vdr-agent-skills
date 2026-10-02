@@ -5,7 +5,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = REPO_ROOT / "skills" / "capture-dataflow" / "scripts" / "capture_dataflow.py"
+SCRIPT = (
+    REPO_ROOT / "skills" / "capture-dataflow-beta" / "scripts" / "capture_dataflow.py"
+)
 SPEC = importlib.util.spec_from_file_location("capture_dataflow", SCRIPT)
 mod = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(mod)

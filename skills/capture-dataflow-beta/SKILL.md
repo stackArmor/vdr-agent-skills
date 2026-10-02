@@ -1,9 +1,9 @@
 ---
-name: capture-dataflow
-description: Beta and potentially deprecated analysis aid for understanding data flows and interrelationships in Kubernetes environments. Use when an operator needs a read-only workload/service dataflow graph, internet-exposure and transit evidence, per-namespace Mermaid diagrams, or the experimental trivy-plugin-vdr vdr-dataflow ConfigMap; the operator reviews and applies any artifact.
+name: capture-dataflow-beta
+description: (Beta) Analysis aid for understanding data flows and interrelationships in Kubernetes environments. Use when an operator needs a read-only workload/service dataflow graph, internet-exposure and transit evidence, per-namespace Mermaid diagrams, or the experimental trivy-plugin-vdr vdr-dataflow ConfigMap; the operator reviews and applies any artifact.
 ---
 
-# Capture Dataflow
+# Capture Dataflow (Beta)
 
 > **Beta:** This skill may be deprecated. Use it as an experimental aid for
 > understanding Kubernetes data flows and interrelationships; do not treat its
@@ -32,7 +32,7 @@ authenticated `kubectl` + `python3`.
 
 ### 2. Capture
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/scripts/capture_dataflow.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow-beta/scripts/capture_dataflow.py \
   --namespaces <ns1,ns2> --emit bundle
 ```
 Optional enrichment inputs (never required): `--flows-file <hubble.jsonl>`,
@@ -43,19 +43,19 @@ Internet-to-workload links in Mermaid diagrams. Read
 `vdr-dataflow-output/bundle.json`.
 
 ### 3. Agentic analysis (required)
-Follow `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/references/analysis-guide.md`
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow-beta/references/analysis-guide.md`
 **section by section**: stage-verdict interpretation, exposure review, zero-edge
 workloads (ask the user targeted questions), unresolved-host triage,
 broker-candidate identification (SQS/S3/Pub/Sub/GCS links pending IAM
 verification, with the workload-identity principal to check), hairpin review,
 then the attestation question. Capture the answers in
 `operator-edges.yaml` (format in
-`${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/references/configmap-schema.md`;
-example in `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/assets/operator-edges.example.yaml`).
+`${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow-beta/references/configmap-schema.md`;
+example in `${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow-beta/assets/operator-edges.example.yaml`).
 
 ### 4. Finalize
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow/scripts/capture_dataflow.py \
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/capture-dataflow-beta/scripts/capture_dataflow.py \
   --namespaces <ns1,ns2> --merge operator-edges.yaml --emit all
 ```
 This writes the final `configmap.yaml` and `diagrams/<namespace>.mmd`.
