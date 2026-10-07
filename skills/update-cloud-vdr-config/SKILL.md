@@ -63,6 +63,12 @@ Optionally supply `--previous-inventory <trusted-prior-snapshot>` to identify
 new identities. Without it, call findings coverage gaps, not proven newly
 created resources. Identity includes project/account, type and primary
 identifier; use full KMS/key/role paths and scoped IAM-binding identities.
+GKE clusters, node pools, fleet memberships, Binary Authorization policies,
+subnets and load-balancer proxies are cloud resource types. Read the generator's
+`references/gke-infrastructure.md` for their identifiers and policy evidence.
+Covered clusters retain their existing SIP even when a new SCC hardening finding
+appears; finding severity or an intentional exception does not justify rescoring
+the asset. Add assignments only for uncovered infrastructure identities.
 
 Mechanically replay rule/override precedence; do not reassess the consequences
 or CR/IR/AR of covered resources. A new resource already covered by an existing

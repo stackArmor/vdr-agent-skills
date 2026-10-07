@@ -248,6 +248,12 @@ identities.
 | GCP | `cloudresourcemanager.googleapis.com/Project` | project ID, not project number |
 | GCP | `compute.googleapis.com/Firewall` | firewall rule name |
 | GCP | `compute.googleapis.com/Network` | network name |
+| GCP | `compute.googleapis.com/Subnetwork` | subnet name |
+| GCP | `compute.googleapis.com/TargetHttpProxy`, `TargetHttpsProxy`, `TargetSslProxy`, `TargetTcpProxy`, `TargetGrpcProxy` | proxy name; each rule uses its full asset type |
+| GCP | `container.googleapis.com/Cluster` | cluster name |
+| GCP | `container.googleapis.com/NodePool` | full `projects/.../locations/.../clusters/.../nodePools/...` path |
+| GCP | `gkehub.googleapis.com/Membership` | fleet membership name |
+| GCP | `binaryauthorization.googleapis.com/Policy` | full `projects/.../policy` path |
 | GCP | `compute.googleapis.com/Image` | VM image name |
 | GCP | `artifactregistry.googleapis.com/Repository` | full `projects/.../locations/.../repositories/...` path |
 | GCP | `artifactregistry.googleapis.com/DockerImage` | full `projects/.../locations/.../repositories/.../dockerImages/...` path |

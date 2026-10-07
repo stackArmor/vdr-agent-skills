@@ -44,6 +44,14 @@ VALID_CONFIDENCE = ("high", "medium", "low")
 # Non-network-attachable types: a networkRule constrained to one of these can
 # never match a resource, because these resources carry no network attachment.
 GLOBAL_TYPES = (
+    "container.googleapis.com/NodePool",
+    "binaryauthorization.googleapis.com/Policy",
+    "gkehub.googleapis.com/Membership",
+    "compute.googleapis.com/TargetHttpProxy",
+    "compute.googleapis.com/TargetHttpsProxy",
+    "compute.googleapis.com/TargetSslProxy",
+    "compute.googleapis.com/TargetTcpProxy",
+    "compute.googleapis.com/TargetGrpcProxy",
     "storage.googleapis.com/Bucket",
     "AWS::S3::Bucket",
     "bigquery.googleapis.com/Dataset",

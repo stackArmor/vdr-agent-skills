@@ -12,7 +12,7 @@
       "name": "trivy-plugin-vdr-skills",
       "source": ".",
       "description": "Seven skills for FedRAMP VDR/VER evidence: assess security objectives; generate Kubernetes/cloud scoring; update Kubernetes/cloud coverage without re-scoring existing assets; capture dataflow; and tag CIS-mapped Terraform assets. Discovery never changes infrastructure; publication requires separate explicit authorization.",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "author": {
         "name": "stackArmor",
         "url": "https://github.com/stackArmor"
