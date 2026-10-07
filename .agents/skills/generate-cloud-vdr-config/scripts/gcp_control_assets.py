@@ -9,6 +9,8 @@ import json
 
 BINDING_TYPE = "vdr.fedramp.io/IAMBinding"
 CONTROL_TYPES = {
+    "container.googleapis.com/NodePool": "container.node_pool",
+    "binaryauthorization.googleapis.com/Policy": "binary_authorization.policy",
     "compute.googleapis.com/Image": "compute.image",
     "artifactregistry.googleapis.com/Repository": "artifact.repository",
     "artifactregistry.googleapis.com/DockerImage": "artifact.container_image",
@@ -118,6 +120,8 @@ def primary_identifier(asset, project_id):
             raise ValueError("service account email is missing")
         return str(email)
     if kind in {
+        "container.googleapis.com/NodePool",
+        "binaryauthorization.googleapis.com/Policy",
         "artifactregistry.googleapis.com/Repository",
         "artifactregistry.googleapis.com/DockerImage",
         "cloudkms.googleapis.com/CryptoKey",
@@ -167,7 +171,47 @@ def safe_metadata(asset):
                 "mode": "user-managed" if "userManaged" in replication else "unknown",
                 "replicas": [{"location": replica.get("location"), "kmsKeys": _kms_keys(replica)} for replica in replicas],
             }
+    if kind == "container.googleapis.com/NodePool":
+        for key in ("version", "status", "locations", "initialNodeCount"):
+            if key in data:
+                result[key] = data[key]
+        for field, allowed in {
+            "management": ("autoRepair", "autoUpgrade"),
+            "autoscaling": ("enabled", "minNodeCount", "maxNodeCount", "totalMinNodeCount", "totalMaxNodeCount"),
+            "config": ("imageType", "serviceAccount", "oauthScopes"),
+        }.items():
+            value = data.get(field) or {}
+            result[field] = {key: value[key] for key in allowed if key in value}
+        config = data.get("config") or {}
+        for field, allowed in {
+            "shieldedInstanceConfig": ("enableSecureBoot", "enableIntegrityMonitoring"),
+            "workloadMetadataConfig": ("mode",),
+        }.items():
+            value = config.get(field) or {}
+            result["config"][field] = {key: value[key] for key in allowed if key in value}
+    if kind == "binaryauthorization.googleapis.com/Policy":
+        result["globalPolicyEvaluationMode"] = data.get("globalPolicyEvaluationMode")
+        result["defaultAdmissionRule"] = _admission_rule(data.get("defaultAdmissionRule") or {})
+        result["admissionWhitelistPatterns"] = [
+            {"namePattern": item["namePattern"]}
+            for item in data.get("admissionWhitelistPatterns") or []
+            if isinstance(item, dict) and "namePattern" in item
+        ]
+        for field in ("clusterAdmissionRules", "kubernetesNamespaceAdmissionRules", "kubernetesServiceAccountAdmissionRules"):
+            result[field] = {str(key): _admission_rule(value) for key, value in (data.get(field) or {}).items()}
+        # A readable policy is not proof any cluster/service opted into it.
+        result["runtime_enforcement_verified"] = False
     return result
+
+
+def _admission_rule(value):
+    return {key: value[key] for key in ("evaluationMode", "enforcementMode", "requireAttestationsBy") if key in value}
+
+
+def binary_authorization_settings(value):
+    """Allowlisted opt-in evidence, never a claim every workload is signed."""
+    value = value if isinstance(value, dict) else {}
+    return {key: value[key] for key in ("enabled", "evaluationMode") if key in value}
 
 
 def _kms_keys(value):

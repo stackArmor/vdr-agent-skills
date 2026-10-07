@@ -15,9 +15,19 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gcp_control_assets import CONTROL_TYPES, BINDING_TYPE, binding_assets, primary_identifier, safe_metadata
+from gcp_control_assets import CONTROL_TYPES, BINDING_TYPE, binding_assets, primary_identifier, safe_metadata, binary_authorization_settings
 
 GCP_ASSET_TYPES = [
+    "container.googleapis.com/Cluster",
+    "container.googleapis.com/NodePool",
+    "gkehub.googleapis.com/Membership",
+    "binaryauthorization.googleapis.com/Policy",
+    "compute.googleapis.com/Subnetwork",
+    "compute.googleapis.com/TargetHttpProxy",
+    "compute.googleapis.com/TargetHttpsProxy",
+    "compute.googleapis.com/TargetSslProxy",
+    "compute.googleapis.com/TargetTcpProxy",
+    "compute.googleapis.com/TargetGrpcProxy",
     "storage.googleapis.com/Bucket",
     "compute.googleapis.com/Instance",
     "sqladmin.googleapis.com/Instance",
@@ -182,7 +192,7 @@ def _map_asset(asset, provider_patterns, project=None):
         if private_network:
             network = _last_segment(private_network)
     else:
-        tags = data.get("labels") or (data.get("metadata") or {}).get("labels") or {}
+        tags = data.get("labels") or data.get("resourceLabels") or (data.get("metadata") or {}).get("labels") or {}
         nics = data.get("networkInterfaces") or []
         if nics:
             nic = nics[0]
@@ -190,12 +200,39 @@ def _map_asset(asset, provider_patterns, project=None):
                 network = _last_segment(nic["network"])
             if nic.get("subnetwork"):
                 subnet = _last_segment(nic["subnetwork"])
+    if asset_type in {"container.googleapis.com/Cluster", "compute.googleapis.com/Subnetwork"}:
+        network = _last_segment(data.get("network") or "") or None
+        subnet = _last_segment(data.get("subnetwork") or "") or None
 
     result = _build_resource(asset_type, identifier, region, tags, network,
                              subnet, provider_patterns)
     result["providerUri"] = asset.get("name")
     if asset_type in CONTROL_TYPES:
         result["metadata"] = asset.get("bindingMetadata") or safe_metadata(asset)
+        if asset_type == "container.googleapis.com/NodePool":
+            result["metadata"]["clusterUri"] = str(asset.get("name") or "").rsplit("/nodePools/", 1)[0]
+    elif asset_type == "container.googleapis.com/Cluster":
+        result["metadata"] = {
+            "binaryAuthorization": binary_authorization_settings(data.get("binaryAuthorization")),
+            "binaryAuthorizationPolicyUri": "//binaryauthorization.googleapis.com/projects/%s/policy" % project,
+            "binaryAuthorizationCoverageVerified": False,
+            "intranodeVisibilityEnabled": (data.get("networkConfig") or {}).get("enableIntraNodeVisibility", False),
+            "datapathProvider": (data.get("networkConfig") or {}).get("datapathProvider"),
+        }
+    elif asset_type == "compute.googleapis.com/Subnetwork":
+        result["metadata"] = {"privateIpGoogleAccess": data.get("privateIpGoogleAccess")}
+    elif asset_type.startswith("compute.googleapis.com/Target"):
+        result["metadata"] = {"sslPolicy": data.get("sslPolicy")}
+    elif asset_type in {"run.googleapis.com/Service", "run.googleapis.com/Job"}:
+        settings = data.get("binaryAuthorization") or {}
+        annotations = (data.get("metadata") or {}).get("annotations") or {}
+        result["metadata"] = {
+            "binaryAuthorization": {
+                key: settings[key] for key in ("useDefault", "policy") if key in settings
+            },
+            "binaryAuthorizationAnnotation": annotations.get("run.googleapis.com/binary-authorization"),
+            "binaryAuthorizationCoverageVerified": False,
+        }
     elif asset_type == "storage.googleapis.com/Bucket":
         result["metadata"] = {"kmsKeyName": (data.get("encryption") or {}).get("defaultKmsKeyName")}
     elif asset_type == "sqladmin.googleapis.com/Instance":
@@ -360,12 +397,49 @@ def _gcp_service_inventory(project, runner, provider_patterns, warnings):
             warnings.append("AlloyDB %s were not enumerated for project %s: %s"
                             % (kind, project, first_line))
 
+    # GKE infrastructure is cloud inventory even though Kubernetes workloads
+    # are maintained by the ConfigMap skills. Query metadata only.
+    try:
+        clusters = _load_json(runner([
+            "gcloud", "container", "clusters", "list", "--project", project, "--format", "json",
+        ]))
+        for cluster in clusters:
+            location = cluster.get("location") or cluster.get("zone")
+            cluster_name = cluster.get("name")
+            if not location or not cluster_name:
+                warnings.append("GKE cluster identity incomplete for project %s" % project)
+                continue
+            uri = "//container.googleapis.com/projects/%s/locations/%s/clusters/%s" % (project, location, cluster_name)
+            resources.append(_map_asset({
+                "assetType": "container.googleapis.com/Cluster", "name": uri,
+                "resource": {"location": location, "data": cluster},
+            }, provider_patterns, project))
+            for pool in cluster.get("nodePools") or []:
+                resources.append(_map_asset({
+                    "assetType": "container.googleapis.com/NodePool",
+                    "name": uri + "/nodePools/" + pool["name"],
+                    "resource": {"location": location, "data": pool},
+                }, provider_patterns, project))
+    except RuntimeError as exc:
+        warnings.append("GKE clusters/node pools were not enumerated for project %s: %s" % (project, str(exc).splitlines()[0]))
+    try:
+        policy = _load_json(runner([
+            "gcloud", "container", "binauthz", "policy", "export", "--project", project, "--format", "json",
+        ]))
+        if isinstance(policy, dict):
+            resources.append(_map_asset({
+                "assetType": "binaryauthorization.googleapis.com/Policy",
+                "name": "//binaryauthorization.googleapis.com/projects/%s/policy" % project,
+                "resource": {"location": "global", "data": policy},
+            }, provider_patterns, project))
+    except RuntimeError as exc:
+        warnings.append("Binary Authorization policy unavailable for project %s: %s" % (project, str(exc).splitlines()[0]))
     return resources
 
 
 def _asset_fallback_warning(project, error_line):
     message = ("Cloud Asset API was not used for project %s; the per-service "
-               "fallback covers buckets, SQL, AlloyDB, compute, BigQuery, Cloud Run, Cloud Functions, and Pub/Sub."
+               "fallback covers buckets, SQL, AlloyDB, compute instances, BigQuery, Cloud Run, Cloud Functions, Pub/Sub and GKE; Binary Authorization policy reads may fail separately."
                % project)
     if error_line:
         message += " Cloud Asset API error: %s" % error_line
@@ -392,7 +466,7 @@ def inventory_gcp(project, patterns, runner=run_command, use_asset_api=True):
                                            warnings)
         inventory_source = "per-service-fallback"
         warnings.insert(0, _asset_fallback_warning(project, asset_error_line))
-        warnings.append("Control-asset coverage unavailable in per-service fallback: secrets, KMS, IAM identities/keys/roles, projects and firewalls were not enumerated.")
+        warnings.append("Control-asset coverage unavailable in per-service fallback: secrets, KMS, IAM identities/keys/roles, projects, networks/firewalls/subnets, load-balancer proxies and fleet memberships were not enumerated.")
 
     # IAM allow bindings are synthesized from policies, not IAM v3 resources.
     # Keep resource results when policy discovery fails, but expose the gap.

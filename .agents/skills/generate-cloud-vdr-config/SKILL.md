@@ -1,6 +1,6 @@
 ---
 name: generate-cloud-vdr-config
-description: Generate or fully reassess vdr-cloud.yaml from read-only GCP/AWS discovery, including secrets, KMS, IAM and workload/data resources. Assign independently dimensional CR/IR/AR profiles with confidence and a coverage ledger. For coverage-only updates preserving existing scores, use update-cloud-vdr-config instead. Never change infrastructure or publish without explicit authorization.
+description: Generate or fully reassess vdr-cloud.yaml from read-only GCP/AWS discovery, including GKE infrastructure, secrets, KMS, IAM and workload/data resources. Assign independently dimensional CR/IR/AR profiles with confidence and a coverage ledger. For coverage-only updates preserving existing scores, use update-cloud-vdr-config instead. Never change infrastructure or publish without explicit authorization.
 ---
 
 # Generate Cloud VDR Config
@@ -80,6 +80,11 @@ all 27 vector combinations, and examples. The governed trace registry and its
 `reason_codes.py` classifier are shared, not duplicated.
 
 For control assets, read `references/control-assets.md` before assigning profiles.
+For GKE clusters/node pools, fleet memberships, or Binary Authorization policies,
+read `references/gke-infrastructure.md`. These cloud resources belong in
+`vdr-cloud.yaml`; Pods, Deployments, namespaces and other Kubernetes objects
+belong in the ConfigMap workflow. Inventory also covers subnets and load-balancer
+proxies affected by infrastructure configuration findings.
 Do not score every secret, key or IAM object alike or treat a service account as
 a secret. Discovery reads resource/IAM-policy metadata only; never secret versions,
 key material, VM metadata values or function environment values.

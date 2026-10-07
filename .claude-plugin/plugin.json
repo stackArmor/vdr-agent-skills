@@ -1,6 +1,6 @@
 {
   "name": "trivy-plugin-vdr-skills",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Agent skills for FedRAMP VDR/VER metadata: security-objectives assessment, Kubernetes/cloud scoring generation and coverage-only updates, cluster dataflow, and selective CIS-mapped Terraform asset tagging.",
   "author": { "name": "stackArmor", "url": "https://github.com/stackArmor" },
   "homepage": "https://github.com/stackArmor/vdr-agent-skills",

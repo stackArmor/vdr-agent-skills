@@ -108,6 +108,13 @@ release assets. These controls are classified by contents, authority and outage
 dependencies, independently across CR/IR/AR; they do not inherit one family-wide
 score. See the skill's control-asset reference for evidence and matching identity.
 
+Cloud discovery also includes GKE clusters/node pools, fleet memberships, Binary
+Authorization policies, subnets and load-balancer proxies. Cluster infrastructure
+uses `vdr-cloud.yaml`; Kubernetes workloads use the ConfigMap skills. The
+[GKE reference](skills/generate-cloud-vdr-config/references/gke-infrastructure.md)
+explains how to review cluster opt-in, project policy rules and unsigned workload
+exceptions without confusing enforcement settings with an asset's SIP.
+
 ### `update-cloud-vdr-config` → additive cloud coverage updates
 
 Starts from the operator-selected current local/GitOps/GCS policy, uses current

@@ -91,6 +91,41 @@ class DecodeVdrTagTests(unittest.TestCase):
 
 
 class GcpInventoryTests(unittest.TestCase):
+    def test_gke_infrastructure_identity_labels_and_admission_metadata(self):
+        cluster_uri = "//container.googleapis.com/projects/p/locations/us-east4/clusters/prod"
+        cluster = self.mod._map_asset({
+            "assetType": "container.googleapis.com/Cluster", "name": cluster_uri,
+            "resource": {"location": "us-east4", "data": {
+                "resourceLabels": {"vdr_fedramp_io_security_impact_profile": "cr-m_ir-h_ar-h"},
+                "network": "projects/p/global/networks/prod", "subnetwork": "prod-nodes",
+                "binaryAuthorization": {"evaluationMode": "PROJECT_SINGLETON_POLICY_ENFORCE", "ignored": "DO-NOT-STORE"},
+            }},
+        }, [], "p")
+        self.assertEqual("prod", cluster["identifier"])
+        self.assertEqual("prod-nodes", cluster["subnet"])
+        self.assertEqual("cr-m_ir-h_ar-h", cluster["vdrTags"]["vdr.fedramp.io/security-impact-profile"])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(cluster))
+        self.assertFalse(cluster["metadata"]["binaryAuthorizationCoverageVerified"])
+        pools = [self.mod._map_asset({
+            "assetType": "container.googleapis.com/NodePool",
+            "name": cluster_uri.replace("/prod", "/" + name) + "/nodePools/default",
+            "resource": {"data": {"config": {"serviceAccount": "worker@p.iam.gserviceaccount.com", "metadata": {"token": "DO-NOT-STORE"}}}},
+        }, [], "p") for name in ("a", "b")]
+        self.assertNotEqual(pools[0]["identifier"], pools[1]["identifier"])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(pools))
+        policy = self.mod._map_asset({
+            "assetType": "binaryauthorization.googleapis.com/Policy",
+            "name": "//binaryauthorization.googleapis.com/projects/p/policy",
+            "resource": {"data": {
+                "defaultAdmissionRule": {"evaluationMode": "REQUIRE_ATTESTATION", "enforcementMode": "ENFORCED_BLOCK_AND_AUDIT_LOG"},
+                "kubernetesNamespaceAdmissionRules": {"legacy-vendor": {"evaluationMode": "ALWAYS_ALLOW"}},
+                "privateKeyData": "DO-NOT-STORE",
+            }},
+        }, [], "p")
+        self.assertEqual("projects/p/policy", policy["identifier"])
+        self.assertEqual("ALWAYS_ALLOW", policy["metadata"]["kubernetesNamespaceAdmissionRules"]["legacy-vendor"]["evaluationMode"])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(policy))
+
     def test_control_identifiers_and_redaction(self):
         sa = {"assetType": "iam.googleapis.com/ServiceAccount", "name": "//iam.googleapis.com/projects/p/serviceAccounts/123", "resource": {"data": {"email": "worker@p.iam.gserviceaccount.com", "privateKeyData": "DO-NOT-STORE"}}}
         mapped = self.mod._map_asset(sa, [], "p")
