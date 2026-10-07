@@ -8,11 +8,9 @@ the cloud analogue of the `vdr-fedramp` scoring ConfigMap. Per-resource
 `vdr.fedramp.io/*` tags (the `tag-terraform-vdr-assets` path) remain valid but
 are demoted to the exception/override mechanism.
 
-**This document is a proposed integration contract. `trivy-plugin-vdr` does not
-consume `vdr-cloud.yaml` today.** Every artifact and every skill statement must
-say so plainly, exactly as the `TerraformAssetClassifications` sidecar does.
-Until plugin-side consumption lands, the document is a reviewed, versioned
-record of cloud-resource impact assignments, not a runtime input.
+**TSW consumes this policy. `trivy-plugin-vdr` does not consume it today.**
+Rules become effective only when the deployed consumer collects their resource
+types and accepts the document. Do not claim coverage from YAML alone.
 
 ## Contents
 
@@ -55,7 +53,7 @@ scopes:
     # confidence: high | operator-confirmed single-agency deployment
     multiAgency: "false"
 
-    nameRules:                    # glob against the type's primary identifier
+    nameRules:                    # glob or regex against the primary identifier
       # confidence: high | operator attested customer PHI store
       - {type: storage.googleapis.com/Bucket, match: "acme-prod-customer-data",
          securityImpactProfile: regulated-data.record-keeping.mission-essential}
@@ -113,16 +111,26 @@ Precedence per resource, most specific first:
 3. `tagRules`;
 4. `networkRules`;
 5. `typeRules`;
-6. scope `class` / `multiAgency` / optional scope `securityImpactProfile`
+6. for ServiceAccountKey SIP only, the unambiguous owning service account's
+   complete SIP (same authorized project/source/tenant); missing, ambiguous or
+   unresolved owners fail closed, and explicit key rules above still win.
+   For CryptoKey SIP and multiAgency, inherit the unambiguous owning KeyRing's
+   resolved values within the same authorized project/source/tenant; match the
+   full location/ring path, not a short name. Missing, ambiguous or unresolved
+   rings fail closed for inherited values; explicit key values above win;
+7. scope `class` / `multiAgency` / optional scope `securityImpactProfile`
    (scope level may set `internetReachable: "true"`, never `"false"` — see
    [Operator-attested internet reachability](#operator-attested-internet-reachability));
-7. global `defaults`;
-8. fail-loud validation error.
+8. global `defaults`;
+9. fail-loud validation error.
 
 Within a family, the first match in document order wins. Families never mix: a
 matching `nameRule` always beats every `tagRule`, and so on down the chain. A
 resource that no rule matches and that no scope or global default covers is a
-**validation error**, not a silent inheritance.
+**validation error**, not a silent inheritance. The explicitly defined key-to-SA
+SIP fallback and CryptoKey-to-KeyRing SIP/multiAgency fallback are the only
+parent inheritance in this precedence chain. Class and reachability resolve
+independently on both key types; SA keys also resolve multiAgency independently.
 
 ## Independent per-attribute resolution
 
@@ -146,8 +154,13 @@ and is refused at the `defaults` level.
 
 `type` compares **exactly** (provider asset-inventory type strings, exactly
 what `gcloud asset list` and the AWS Config/tagging APIs emit, so discovery
-needs no mapping layer). Every other match field — `match`, `matchTags` values,
-`network`, `subnet`, `region` — is an `fnmatch` glob.
+needs no mapping layer). The match fields `match`, `matchTags` values,
+`network`, `subnet`, `region` are `fnmatch` globs.
+`matchRegex` is an explicit regular-expression alternative to `match` in
+`nameRules` only; existing glob fields never change meaning.
+
+The exception is `vdr.fedramp.io/IAMBinding`, an explicitly synthetic allow-grant
+type derived from IAM-policy metadata, not a provider-native resource.
 
 Under the GCP Cloud Asset API inventory path, Compute Engine instance `region`
 values are zone-granular (e.g. `us-central1-a`), while the per-service fallback
@@ -156,7 +169,7 @@ records the true region (`us-central1`), so write region globs tolerant of both
 
 | Family | Required field | Optional narrowing fields | Notes |
 |---|---|---|---|
-| `nameRules` | `match` | `type` (strongly recommended), `matchTags`, `region` | name globs are meaningless across types, so always pin `type` |
+| `nameRules` | exactly one of `match` or `matchRegex` | `type`, `matchTags`, `region` | always pin `type`; mandatory for regex |
 | `tagRules` | `matchTags` | `type`, `region` | every key/value in `matchTags` must match; values may be globs |
 | `networkRules` | `network` | `subnet`, `type`, `region` | applies only to network-attached types; can never match a global resource such as a bucket |
 | `typeRules` | `type` | `region` | matches a whole resource family in the scope |
@@ -168,9 +181,47 @@ setting `internetReachable: "false"` must also set
 compound matches need no extra mechanism. A `networkRule` whose `type` is a
 global (non-network-attached) type fails validation.
 
+### Regex name rules
+
+`matchRegex` is a non-empty string matching the **entire primary identifier**,
+case-sensitive by default. Anchors are optional; this is not substring search.
+It uses Python's `regex` package (`regex>=2024.11.4`, VERSION0 default) identically
+in the skill renderer/validator/delta helper and TSW. Inline flags such as
+`(?i)` may deliberately change case sensitivity. Patterns are limited to 2,048
+characters and each match has a 25 ms timeout. Invalid syntax, simultaneous
+non-null `match`/`matchRegex`, a missing type, and use outside `nameRules` fail
+validation. A runtime timeout fails the evaluation rather than falling through
+to a broader rule. TSW acceptance rolls back and keeps the last accepted policy.
+
+For a finite coherent group, prefer explicit alternatives to an overly broad
+`.*`:
+
+```yaml
+nameRules:
+  # confidence: medium | reviewed deployment identities with the same role
+  # manual-review: Confirm grants and whether outage blocks recovery.
+  - type: iam.googleapis.com/ServiceAccount
+    matchRegex: '(deploy|image-builder|bootstrap)@acme-prod\.iam\.gserviceaccount\.com'
+    securityImpactProfile: privileged-access.release-control.change-deferred
+```
+
+Single-quoted YAML preserves regex backslashes; double-quoted YAML requires
+`\\` for a literal backslash. The renderer always emits safely quoted regex
+strings. Match regexes against the identifier table below, not display names,
+Name tags, or arbitrary provider URIs. Optional type/tag/region constraints AND
+with the regex. Regex and glob rules share document order and per-attribute
+precedence; regex is not a higher-priority rule family.
+
+One grouped rule has one evidence/confidence/review note. Expand every current
+match into the coverage ledger and verify equal CR/IR/AR consequences. Do not
+group privileged runtime identities with deployment-only identities just
+because their names resemble each other. The coverage-only update skill keeps
+existing rules unchanged; consolidating existing rules is a separately requested
+refactor, checked for equivalent resolved attributes against the same inventory.
+
 ## Primary identifiers
 
-`match` globs against the resource type's **primary identifier**, fixed by this
+`match` globs or `matchRegex` expressions match the type's **primary identifier**, fixed by this
 table. AWS Name-tag matching goes through `tagRules` (`matchTags: {Name:
 "web-*"}`), never `nameRules`, so a resource never has two competing name
 identities.
@@ -188,6 +239,19 @@ identities.
 | GCP | `pubsub.googleapis.com/Subscription` | Pub/Sub subscription name (last segment) |
 | GCP | `alloydb.googleapis.com/Cluster` | AlloyDB cluster id |
 | GCP | `alloydb.googleapis.com/Instance` | AlloyDB instance id |
+| GCP | `secretmanager.googleapis.com/Secret` | secret ID |
+| GCP | `cloudkms.googleapis.com/CryptoKey` | full `projects/.../locations/.../keyRings/.../cryptoKeys/...` path |
+| GCP | `cloudkms.googleapis.com/KeyRing` | full `projects/.../locations/.../keyRings/...` path |
+| GCP | `iam.googleapis.com/ServiceAccount` | service account email |
+| GCP | `iam.googleapis.com/ServiceAccountKey` | full `projects/.../serviceAccounts/.../keys/...` path, metadata only |
+| GCP | `iam.googleapis.com/Role` | full project custom-role path; built-in roles are grant evidence |
+| GCP | `cloudresourcemanager.googleapis.com/Project` | project ID, not project number |
+| GCP | `compute.googleapis.com/Firewall` | firewall rule name |
+| GCP | `compute.googleapis.com/Network` | network name |
+| GCP | `compute.googleapis.com/Image` | VM image name |
+| GCP | `artifactregistry.googleapis.com/Repository` | full `projects/.../locations/.../repositories/...` path |
+| GCP | `artifactregistry.googleapis.com/DockerImage` | full `projects/.../locations/.../repositories/.../dockerImages/...` path |
+| GCP | `vdr.fedramp.io/IAMBinding` | `binding-<SHA256>`; synthetic attached-resource/member/role/condition identity |
 | AWS | `AWS::S3::Bucket` | S3 bucket name |
 | AWS | `AWS::EC2::Instance` | EC2 **instance ID** (Name-tag matching goes through `tagRules`) |
 | AWS | `AWS::RDS::DBInstance` | RDS DB identifier |
@@ -349,7 +413,9 @@ Field notes:
   one non-null), `confidence`, optional `builtinPattern` id, `evidence`, and a
   `manualReview` list. `type` compares exactly; `match`, `matchTags` values, `network`,
   `subnet`, and `region` use `fnmatch.fnmatchcase` globs. Unused fields may be
-  `null` or omitted.
+  `null` or omitted. A `nameRules` item may use `matchRegex` instead of `match`
+  with the same whole-identifier regex contract above; JSON must escape
+  backslashes as `\\`.
 - **`internetReachable`** is `"true"`, `"false"`, or `null` (the normal value),
   and lives on **rules only**. `"false"` requires a non-empty
   `internetReachableJustification` and is a render-time `ValueError` without

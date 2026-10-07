@@ -6,19 +6,26 @@ and never parsed back; ``render(plan)`` is a pure function of the plan JSON so a
 validator can re-render and byte-compare.
 """
 import argparse
+import importlib.util
 import json
 import sys
+from pathlib import Path
+
+_spec = importlib.util.spec_from_file_location(
+    "cloud_name_matching", Path(__file__).resolve().with_name("cloud_name_matching.py"))
+_name_matching = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_name_matching)
 
 HEADER = [
-    "# Central cloud-resource scoring assignment surface for trivy-plugin-vdr.",
-    "# PROPOSED INTEGRATION CONTRACT: no current scanner consumes this document.",
+    "# Central cloud-resource scoring assignment surface for TSW.",
+    "# TSW consumes this policy; trivy-plugin-vdr does not. Deployed type support is required.",
     "apiVersion: vdr.fedramp.io/v1alpha1",
     "kind: CloudResourceScoringConfig",
 ]
 
 # Fixed key order for a rule's single-line flow map.
 RULE_KEY_ORDER = [
-    "type", "match", "matchTags", "network", "subnet", "region",
+    "type", "match", "matchRegex", "matchTags", "network", "subnet", "region",
     "securityImpactProfile", "multiAgency",
     "internetReachable", "internetReachableJustification",
 ]
@@ -45,8 +52,8 @@ def _quote(value, force=False):
     left bare; values with ``*`` or spaces (globs, prose) are quoted.
     """
     text = str(value)
-    if force or "*" in text or " " in text:
-        return '"%s"' % text
+    if force or any(char in text for char in '* {}[],:#&!?|>"') or any(char in text for char in ("\\", "\n", "\r", "\t")):
+        return json.dumps(text, ensure_ascii=False)
     return text
 
 
@@ -67,7 +74,7 @@ def _render_rule_map(rule):
             continue
         if key == "matchTags":
             parts.append("matchTags: %s" % _render_match_tags(value))
-        elif key in ("multiAgency", "internetReachable",
+        elif key in ("matchRegex", "multiAgency", "internetReachable",
                      "internetReachableJustification"):
             parts.append("%s: %s" % (key, _quote(value, force=True)))
         else:
@@ -119,12 +126,15 @@ def _attestation_lines(key, attestation, indent, where):
     confidence = attestation["confidence"]
     manual_review = attestation.get("manualReview", [])
     _check_confidence(confidence, manual_review, where)
-    lines = ["%s# confidence: %s | %s"
-             % (indent, confidence, attestation["evidence"])]
+    lines = _comment_lines("confidence: %s | %s" % (confidence, attestation["evidence"]), indent)
     for item in manual_review:
-        lines.append("%s# manual-review: %s" % (indent, item))
+        lines.extend(_comment_lines("manual-review: %s" % item, indent))
     lines.append('%s%s: "%s"' % (indent, key, attestation["value"]))
     return lines
+
+
+def _comment_lines(value, indent):
+    return ["%s# %s" % (indent, line) for line in str(value).splitlines()]
 
 
 def _rule_lines(rule, indent, where):
@@ -136,10 +146,9 @@ def _rule_lines(rule, indent, where):
     lines = []
     if rule.get("builtinPattern"):
         lines.append("%s# builtin-pattern: %s" % (indent, rule["builtinPattern"]))
-    lines.append("%s# confidence: %s | %s"
-                 % (indent, confidence, rule["evidence"]))
+    lines.extend(_comment_lines("confidence: %s | %s" % (confidence, rule["evidence"]), indent))
     for item in manual_review:
-        lines.append("%s# manual-review: %s" % (indent, item))
+        lines.extend(_comment_lines("manual-review: %s" % item, indent))
     lines.append("%s%s" % (indent, _render_rule_map(rule)))
     return lines
 
@@ -153,6 +162,9 @@ def _rule_family_lines(scope, family, indent, scope_key):
     rule_indent = indent + "  "
     for i, rule in enumerate(rules):
         where = "%s %s[%d]" % (scope_key, family, i)
+        errors = _name_matching.selector_errors(rule, family)
+        if errors:
+            raise ValueError("%s: %s" % (where, "; ".join(errors)))
         lines.extend(_rule_lines(rule, rule_indent, where))
     return lines
 

@@ -23,7 +23,7 @@ Nine checks are enforced:
   8. each coverage assignment matches the replayed resolution and vector;
   9. rendered drift: re-rendering the plan must reproduce the supplied text.
 
-Standard library only (Python >= 3.8).
+Python >= 3.8; matchRegex rules additionally require regex>=2024.11.4.
 """
 
 import argparse
@@ -47,6 +47,18 @@ GLOBAL_TYPES = (
     "storage.googleapis.com/Bucket",
     "AWS::S3::Bucket",
     "bigquery.googleapis.com/Dataset",
+    "secretmanager.googleapis.com/Secret",
+    "cloudkms.googleapis.com/CryptoKey",
+    "cloudkms.googleapis.com/KeyRing",
+    "iam.googleapis.com/ServiceAccount",
+    "iam.googleapis.com/ServiceAccountKey",
+    "iam.googleapis.com/Role",
+    "cloudresourcemanager.googleapis.com/Project",
+    "vdr.fedramp.io/IAMBinding",
+    "compute.googleapis.com/Image",
+    "artifactregistry.googleapis.com/Repository",
+    "artifactregistry.googleapis.com/DockerImage",
+    "cloudfunctions.googleapis.com/Function",
 )
 
 _HERE = Path(__file__).resolve().parent
@@ -82,6 +94,10 @@ def load_classifier():
                 "governed reason-code helper not found: %s" % _REASON_CODES)
         _classify = _load_module("vdr_reason_codes", _REASON_CODES).classify
     return _classify
+
+
+_name_matching = _load_module("cloud_name_matching", _HERE / "cloud_name_matching.py")
+selector_errors = _name_matching.selector_errors
 
 
 def load_named_profiles():
@@ -146,8 +162,9 @@ def rule_matches(rule, res, family):
                                                       rule["region"]):
         return False
     if family == "nameRules":
-        match = rule.get("match")
-        if not match or not fnmatch.fnmatchcase(res["identifier"], match):
+        if selector_errors(rule, family):
+            return False
+        if not _name_matching.name_matches(rule, res["identifier"]):
             return False
     if rule.get("matchTags"):
         tags = res.get("tags") or {}
@@ -170,12 +187,30 @@ def rule_matches(rule, res, family):
     return True
 
 
-def resolve(res, scope_plan, defaults):
+def key_parent(res, scope, resources, *, kms=False):
+    helper = _load_module("vdr_control_assets", _HERE / "gcp_control_assets.py")
+    project_ids = [scope.get("project")]
+    # Only the collected project's immutable ID verifies a project-number alias.
+    for resource in resources:
+        metadata = resource.get("metadata") or {}
+        if (resource.get("type") == "cloudresourcemanager.googleapis.com/Project"
+                and metadata.get("projectId") == scope.get("project")):
+            project_ids.append(metadata.get("projectNumber"))
+    matcher = helper.kms_key_ring_parents if kms else helper.service_account_parents
+    parents = matcher(
+        res.get("providerUri") or res.get("identifier"), resources,
+        project_ids,
+    )
+    return parents[0] if len(parents) == 1 else None
+
+
+def resolve(res, scope_plan, defaults, resources=()):
     """Independently resolve securityImpactProfile, multiAgency, and class.
 
     Each attribute resolves down its own chain: tag-override, then rules in
     family then document order (first rule that SETS the attribute wins),
-    then the scope default, the global default, and finally ``unresolved``
+    then the owning SA SIP or KMS ring SIP/multiAgency, the scope default,
+    the global default, and finally ``unresolved``
     for securityImpactProfile.
     """
     out = {}
@@ -192,6 +227,31 @@ def resolve(res, scope_plan, defaults):
                 sip = (rule["securityImpactProfile"], source)
             if ma is None and rule.get("multiAgency") is not None:
                 ma = (rule["multiAgency"], source)
+    if sip is None and res.get("type") == "iam.googleapis.com/ServiceAccountKey":
+        parent = key_parent(res, scope_plan, resources)
+        parent_sip = resolve(parent, scope_plan, defaults, resources)["securityImpactProfile"] if parent else (None, "unresolved")
+        sip = (parent_sip[0], "service-account:%s:%s" % (parent["identifier"], parent_sip[1])) if parent_sip[0] else (None, "unresolved")
+    if res.get("type") == "cloudkms.googleapis.com/CryptoKey" and (sip is None or ma is None):
+        parent = key_parent(res, scope_plan, resources, kms=True)
+        inherited = resolve(parent, scope_plan, defaults, resources) if parent else {}
+        if parent:
+            try:
+                resolve_profile(inherited["securityImpactProfile"][0])
+                parent_valid = (inherited["multiAgency"][0] in ("true", "false")
+                                and inherited["class"][0] in ("A", "B", "C", "D"))
+            except (ValueError, RuntimeError, TypeError):
+                parent_valid = False
+            if not parent_valid:
+                inherited = {}
+        for attribute, current in (("securityImpactProfile", sip), ("multiAgency", ma)):
+            if current is not None:
+                continue
+            value, source = inherited.get(attribute, (None, "unresolved"))
+            result = (value, "key-ring:%s:%s" % (parent["identifier"], source)) if value is not None else (None, "unresolved")
+            if attribute == "securityImpactProfile":
+                sip = result
+            else:
+                ma = result
     if sip is None and scope_plan.get("securityImpactProfile"):
         sip = (scope_plan["securityImpactProfile"], "scope-default")
     if sip is None and defaults.get("securityImpactProfile"):
@@ -275,7 +335,9 @@ def _validate_scope_shape(scope, key, errors):
         for i, rule in enumerate(scope.get(family) or []):
             where = "%s %s[%d]" % (key, family, i)
             required = _required_field(family)
-            if not rule.get(required):
+            errors.extend("%s: %s" % (where, error)
+                          for error in selector_errors(rule, family))
+            if family != "nameRules" and not rule.get(required):
                 errors.append("%s missing required %s field" % (where, required))
             if not _rule_assigns(rule):
                 errors.append("%s assigns none of securityImpactProfile, "
@@ -300,7 +362,7 @@ def _matched_sets(scope, resources):
     for family in FAMILIES:
         family_sets = []
         for rule in scope.get(family) or []:
-            hits = {res["identifier"] for res in resources
+            hits = {(res["type"], res["identifier"]) for res in resources
                     if rule_matches(rule, res, family)}
             family_sets.append(hits)
         matched[family] = family_sets
@@ -334,7 +396,7 @@ def _check_zero_match_and_shadow(scope, key, matched, errors):
 def _check_resolution_replay(scope, key, resources, defaults, errors):
     """Check 4: every resource resolves to a securityImpactProfile."""
     for res in resources:
-        resolved = resolve(res, scope, defaults)
+        resolved = resolve(res, scope, defaults, resources)
         if resolved["securityImpactProfile"][1] == "unresolved":
             errors.append("%s %s unresolved: no rule, scope default, or global "
                           "default assigns a securityImpactProfile"
@@ -446,12 +508,16 @@ def validate(plan, inventory, coverage, rendered_text):
     for key in sorted(set(plan_scopes) & set(inventory_scopes)):
         scope = plan_scopes[key]
         resources = inventory_scopes[key].get("resources", [])
-        matched = _matched_sets(scope, resources)
+        try:
+            matched = _matched_sets(scope, resources)
+        except ValueError as exc:
+            errors.append("%s: %s" % (key, exc))
+            return errors
         _check_zero_match_and_shadow(scope, key, matched, errors)
         _check_resolution_replay(scope, key, resources, defaults, errors)
         for res in resources:
             resolved_by_key[(key, res["type"], res["identifier"])] = \
-                resolve(res, scope, defaults)
+                resolve(res, scope, defaults, resources)
 
     # Check 7 (inventory equation).
     _check_inventory_equation(inventory, coverage, errors)
@@ -460,8 +526,11 @@ def validate(plan, inventory, coverage, rendered_text):
     _check_assignments(coverage, resolved_by_key, errors)
 
     # Check 9 (rendered drift).
-    if load_render()(plan) != rendered_text:
-        errors.append("rendered vdr-cloud.yaml does not match the plan")
+    try:
+        if load_render()(plan) != rendered_text:
+            errors.append("rendered vdr-cloud.yaml does not match the plan")
+    except ValueError as exc:
+        errors.append("cannot render vdr-cloud.yaml: %s" % exc)
 
     return errors
 

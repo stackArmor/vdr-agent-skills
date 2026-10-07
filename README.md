@@ -10,7 +10,8 @@ VDR/VER scoring. One skill assesses system and agency security objectives
 without infrastructure access; the Kubernetes skills read clusters with
 read-only `kubectl` and write ConfigMaps locally. The Terraform skill
 selectively adds reviewable metadata to CIS Foundations-mapped cloud assets.
-**Nothing is ever applied to a cluster or cloud account by an agent.**
+**Infrastructure is never applied by these skills.** Publishing a validated cloud
+policy object is a separate action allowed only when explicitly requested.
 
 ## The skills
 
@@ -67,7 +68,17 @@ compositional decision traces, or named archetypes. Emits a central
 workload plus an assignment-coverage ledger with confidence and manual-review
 reporting.
 
-### `generate-cloud-vdr-config` → the central vdr-cloud.yaml (proposed contract)
+### `update-k8s-vdr-configmap` → additive Kubernetes coverage updates
+
+Reads the current kubectl context and deployed `vdr-fedramp` ConfigMap (or asks
+for the operator's current baseline), then inventories workloads read-only.
+Evaluates only missing assignments; new workloads already covered by a valid
+label, rule or intentional default are left alone. Produces a local candidate,
+gap-only decision ledger and an offline guard report proving that existing
+rules, resolved profiles, defaults, ceilings and attestations are unchanged.
+It does not re-evaluate existing scores or deploy anything.
+
+### `generate-cloud-vdr-config` → the central vdr-cloud.yaml
 
 Extends the central-assignment model to **non-Kubernetes cloud resources**. It
 discovers CIS Foundations-addressed GCP and AWS resource families (object
@@ -82,9 +93,31 @@ surface, so per-resource `vdr.fedramp.io/*` tags are demoted to
 exceptions/overrides. Provider-managed resources (staging buckets, template
 stores, CDK assets, ...) are matched against a governed catalog and
 **materialized as reviewable medium-confidence rules**, never assumed silently.
-Like the `tag-terraform-vdr-assets` sidecar, `vdr-cloud.yaml` is a **proposed
-integration contract — `trivy-plugin-vdr` does not consume it today** — and
-every artifact and handoff says so.
+TSW consumes the policy for supported, collected types; **trivy-plugin-vdr does
+not consume `vdr-cloud.yaml` today**.
+
+Name rules support existing `match` globs or explicit `matchRegex` whole-identifier
+regular expressions, with identical matching and validation in the skill and
+TSW. Regex rules require `regex>=2024.11.4` in the script environment; see the
+[schema contract](skills/generate-cloud-vdr-config/references/cloud-config-schema.md#regex-name-rules).
+
+TSW consumes this policy for supported, collected resource types. Discovery also
+covers GCP secrets, KMS keys/rings, identities/key metadata, custom IAM roles,
+synthetic scoped IAM allow bindings, projects, firewalls/networks and VM/container
+release assets. These controls are classified by contents, authority and outage
+dependencies, independently across CR/IR/AR; they do not inherit one family-wide
+score. See the skill's control-asset reference for evidence and matching identity.
+
+### `update-cloud-vdr-config` → additive cloud coverage updates
+
+Starts from the operator-selected current local/GitOps/GCS policy, uses current
+gcloud credentials and asks for AWS CLI profiles/accounts/regions. Diffs fresh
+read-only inventory against effective assignments and evaluates only missing
+resources/new scopes. Preserves all existing scores, rules and attestations;
+the offline guard rejects accidental re-scoring, broad new defaults and additions
+that touch already-covered resources. Outputs stay local unless the operator
+separately authorizes publication. Optional prior inventories distinguish new
+identities from older resources missing scoring; partial discovery stays visible.
 
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 
@@ -172,10 +205,10 @@ The repository provides all skills under `.agents/skills/` following the open Ag
 
 | Tool | Notes |
 |------|-------|
-| `kubectl` (authenticated) | For `generate-k8s-vdr-configmap` and `capture-dataflow-beta`; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
-| `gcloud` / `aws` CLIs (authenticated, read-only) | For `generate-cloud-vdr-config` only. Read-only access is sufficient — `list`/`describe`/`get` and `sts get-caller-identity`; the skill never runs a mutating verb or applies anything to a cloud account. |
+| `kubectl` (authenticated) | For Kubernetes generation/update and dataflow skills; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, the scoring ConfigMap and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
+| `gcloud` / `aws` CLIs (authenticated, read-only) | For cloud generation/update skills. Discovery uses `list`/`describe`/`get` and `sts get-caller-identity`; no infrastructure is applied. Policy publication is a separate explicitly authorized action. |
 | `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
-| `python3` (>= 3.8) | For the inventory/capture scripts. Standard library only — no `pip install`. |
+| `python3` (>= 3.8) | Inventory/capture scripts use the standard library. The update skills' offline YAML delta/guard helper needs PyYAML. Cloud `matchRegex` rendering/validation/diff workflows also need `regex>=2024.11.4`; use an existing environment with these dependencies. |
 
 ## Security posture
 

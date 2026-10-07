@@ -71,6 +71,14 @@ def plan_with_rule(rule):
 
 
 class ReachabilityAttestationRenderTests(unittest.TestCase):
+    def test_quotes_and_multiline_evidence_remain_safe_yaml(self):
+        rule = attested_rule(internetReachable="false", internetReachableJustification='Only the "agency" allowlist\npermits access')
+        rule['evidence'] = 'first line\nsecond line'
+        text = self.mod.render(plan_with_rule(rule))
+        self.assertIn('# second line', text)
+        self.assertIn('\\"agency\\"', text)
+        self.assertIn('\\npermits access', text)
+
     @classmethod
     def setUpClass(cls):
         cls.mod = load()

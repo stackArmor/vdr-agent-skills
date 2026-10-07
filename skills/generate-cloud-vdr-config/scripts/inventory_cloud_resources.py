@@ -14,6 +14,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gcp_control_assets import CONTROL_TYPES, BINDING_TYPE, binding_assets, primary_identifier, safe_metadata
+
 GCP_ASSET_TYPES = [
     "storage.googleapis.com/Bucket",
     "compute.googleapis.com/Instance",
@@ -30,6 +33,18 @@ GCP_ASSET_TYPES = [
     "pubsub.googleapis.com/Subscription",
     "alloydb.googleapis.com/Cluster",
     "alloydb.googleapis.com/Instance",
+    "secretmanager.googleapis.com/Secret",
+    "cloudkms.googleapis.com/CryptoKey",
+    "cloudkms.googleapis.com/KeyRing",
+    "iam.googleapis.com/ServiceAccount",
+    "iam.googleapis.com/ServiceAccountKey",
+    "iam.googleapis.com/Role",
+    "cloudresourcemanager.googleapis.com/Project",
+    "compute.googleapis.com/Firewall",
+    "compute.googleapis.com/Network",
+    "compute.googleapis.com/Image",
+    "artifactregistry.googleapis.com/Repository",
+    "artifactregistry.googleapis.com/DockerImage",
 ]
 
 GCP_KEY_ALIASES = {
@@ -149,15 +164,17 @@ def _gcp_caller_identity(runner):
     return None
 
 
-def _map_asset(asset, provider_patterns):
+def _map_asset(asset, provider_patterns, project=None):
     asset_type = asset.get("assetType")
-    identifier = _last_segment(asset.get("name", ""))
+    identifier = primary_identifier(asset, project) if asset_type in CONTROL_TYPES else _last_segment(asset.get("name", ""))
     resource_block = asset.get("resource") or {}
     data = resource_block.get("data") or {}
     region = resource_block.get("location")
 
     network = None
     subnet = None
+    if asset_type == "compute.googleapis.com/Firewall":
+        network = _last_segment(data.get("network") or "") or None
     if asset_type == "sqladmin.googleapis.com/Instance":
         settings = data.get("settings") or {}
         tags = settings.get("userLabels") or {}
@@ -174,15 +191,25 @@ def _map_asset(asset, provider_patterns):
             if nic.get("subnetwork"):
                 subnet = _last_segment(nic["subnetwork"])
 
-    return _build_resource(asset_type, identifier, region, tags, network,
-                           subnet, provider_patterns)
+    result = _build_resource(asset_type, identifier, region, tags, network,
+                             subnet, provider_patterns)
+    result["providerUri"] = asset.get("name")
+    if asset_type in CONTROL_TYPES:
+        result["metadata"] = asset.get("bindingMetadata") or safe_metadata(asset)
+    elif asset_type == "storage.googleapis.com/Bucket":
+        result["metadata"] = {"kmsKeyName": (data.get("encryption") or {}).get("defaultKmsKeyName")}
+    elif asset_type == "sqladmin.googleapis.com/Instance":
+        result["metadata"] = {"kmsKeyName": (data.get("diskEncryptionConfiguration") or {}).get("kmsKeyName")}
+    elif asset_type.startswith("pubsub.googleapis.com/"):
+        result["metadata"] = {"kmsKeyName": data.get("kmsKeyName")}
+    return result
 
 
 def _gcp_asset_inventory(project, runner, provider_patterns):
     output = runner(["gcloud", "asset", "list", "--project", project,
                      "--asset-types", ",".join(GCP_ASSET_TYPES),
                      "--content-type", "resource", "--format", "json"])
-    return [_map_asset(asset, provider_patterns) for asset in _load_json(output)]
+    return [_map_asset(asset, provider_patterns, project) for asset in _load_json(output)]
 
 
 def _gcp_service_inventory(project, runner, provider_patterns, warnings):
@@ -365,12 +392,28 @@ def inventory_gcp(project, patterns, runner=run_command, use_asset_api=True):
                                            warnings)
         inventory_source = "per-service-fallback"
         warnings.insert(0, _asset_fallback_warning(project, asset_error_line))
+        warnings.append("Control-asset coverage unavailable in per-service fallback: secrets, KMS, IAM identities/keys/roles, projects and firewalls were not enumerated.")
+
+    # IAM allow bindings are synthesized from policies, not IAM v3 resources.
+    # Keep resource results when policy discovery fails, but expose the gap.
+    try:
+        policies = _load_json(runner([
+            "gcloud", "asset", "list", "--project", project,
+            "--asset-types", ",".join(GCP_ASSET_TYPES),
+            "--content-type", "iam-policy", "--format", "json",
+        ]))
+        for policy in policies:
+            resources.extend(_map_asset(binding, provider_patterns, project)
+                             for binding in binding_assets(policy))
+    except (RuntimeError, ValueError) as exc:
+        warnings.append("IAM binding discovery incomplete for project %s: %s" % (project, str(exc).splitlines()[0]))
 
     provenance = {
         "inventorySource": inventory_source,
         "callerIdentity": caller_identity,
         "profile": None,
         "resolvedScope": project,
+        "consistency": "Cloud Asset Inventory is eventually consistent; attached policies do not establish complete inherited or cross-project effective permissions.",
     }
 
     return {

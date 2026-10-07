@@ -99,6 +99,14 @@ class ReachabilityAttestationValidationTests(unittest.TestCase):
 
 
 class ResolveTests(unittest.TestCase):
+    def test_shadow_checks_use_type_and_identifier(self):
+        mod = load("validate_cloud_config")
+        resources = [resource(identifier="sync", rtype=kind) for kind in ("run.googleapis.com/Service", "cloudfunctions.googleapis.com/Function")]
+        scope = scope_plan(nameRules=[rule(type=kind, match="sync", securityImpactProfile="cr-h_ir-h_ar-m") for kind in ("run.googleapis.com/Service", "cloudfunctions.googleapis.com/Function")])
+        errors = []
+        mod._check_zero_match_and_shadow(scope, "gcp/acme-prod", mod._matched_sets(scope, resources), errors)
+        self.assertEqual([], errors)
+
     @classmethod
     def setUpClass(cls):
         cls.mod = load("validate_cloud_config")

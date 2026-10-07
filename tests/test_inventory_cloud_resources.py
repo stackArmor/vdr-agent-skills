@@ -91,6 +91,23 @@ class DecodeVdrTagTests(unittest.TestCase):
 
 
 class GcpInventoryTests(unittest.TestCase):
+    def test_control_identifiers_and_redaction(self):
+        sa = {"assetType": "iam.googleapis.com/ServiceAccount", "name": "//iam.googleapis.com/projects/p/serviceAccounts/123", "resource": {"data": {"email": "worker@p.iam.gserviceaccount.com", "privateKeyData": "DO-NOT-STORE"}}}
+        mapped = self.mod._map_asset(sa, [], "p")
+        self.assertEqual("worker@p.iam.gserviceaccount.com", mapped["identifier"])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(mapped))
+        for region in ("us-east4", "us-central1"):
+            key = self.mod._map_asset({"assetType": "cloudkms.googleapis.com/CryptoKey", "name": "//cloudkms.googleapis.com/projects/p/locations/%s/keyRings/r/cryptoKeys/default" % region}, [], "p")
+            self.assertIn(region, key["identifier"])
+
+    def test_binding_identity_and_condition(self):
+        control = load_script("gcp_control_assets")
+        policy = {"name": "//cloudresourcemanager.googleapis.com/projects/123", "iamPolicy": {"bindings": [{"role": "roles/viewer", "members": ["user:a"], "condition": {"expression": "true"}}]}}
+        first = control.binding_assets(policy)[0]
+        policy["iamPolicy"]["bindings"][0]["condition"]["expression"] = "false"
+        self.assertNotEqual(first["name"], control.binding_assets(policy)[0]["name"])
+        self.assertTrue(self.mod._map_asset(first, [], "p")["identifier"].startswith("binding-"))
+
     @classmethod
     def setUpClass(cls):
         cls.mod = load_script("inventory_cloud_resources")
@@ -200,7 +217,8 @@ class GcpInventoryTests(unittest.TestCase):
         # Nothing here should have been reported as un-enumerated. Match the
         # specific failure wording: the degraded-inventory warning legitimately
         # names both families in the list of what the fallback covers.
-        self.assertFalse([w for w in scope["warnings"] if "were not enumerated" in w])
+        self.assertFalse([w for w in scope["warnings"] if "were not enumerated" in w and ("Pub/Sub" in w or "AlloyDB" in w)])
+        self.assertTrue(any("Control-asset coverage unavailable" in w for w in scope["warnings"]))
 
     def test_asset_api_requests_every_scoreable_family(self):
         """The Asset API path and the fallback must agree on what is in scope.

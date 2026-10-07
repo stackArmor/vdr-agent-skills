@@ -1,6 +1,6 @@
 ---
 name: generate-cloud-vdr-config
-description: Generate or update the central vdr-cloud.yaml CloudResourceScoringConfig for non-Kubernetes cloud resources from read-only gcloud/aws discovery of CIS Foundations-addressed GCP and AWS resource families; assign FedRAMP Class, agency scope, and independently dimensional CR/IR/AR security-impact profiles through name, tag, network, and type rule matching with family-tier precedence; materialize managed-resource patterns as reviewable medium-confidence rules; demote per-resource vdr.fedramp.io/* tags to overrides; emit a coverage ledger with confidence and manual-review reporting; validate full coverage without cloud access; and never apply anything. The document is a proposed integration contract that no current scanner consumes.
+description: Generate or fully reassess vdr-cloud.yaml from read-only GCP/AWS discovery, including secrets, KMS, IAM and workload/data resources. Assign independently dimensional CR/IR/AR profiles with confidence and a coverage ledger. For coverage-only updates preserving existing scores, use update-cloud-vdr-config instead. Never change infrastructure or publish without explicit authorization.
 ---
 
 # Generate Cloud VDR Config
@@ -14,26 +14,33 @@ workloads. In commands below, resolve `<skill-dir>` to the directory containing
 this file. Read `references/cloud-config-schema.md` and
 `references/managed-resource-patterns.md` before authoring rules.
 
+For an additive coverage update that must not reassess existing scores, use
+the separate `../update-cloud-vdr-config/SKILL.md` workflow instead.
+
 ## Ground rules
 
 - Run only read-only cloud verbs: `list`, `describe`, `get`,
   `sts get-caller-identity`, `gcloud config get-value`, `gcloud auth list`,
-  `gcloud projects list`, `gcloud asset list`. Never run any mutating verb and
-  never apply anything to a cloud account.
+  `gcloud projects list`, `gcloud asset list`. Never change cloud infrastructure,
+  replication, secret values, key state or IAM permissions. If the user explicitly
+  requests policy publication, treat that as a separate step: validate locally,
+  back up the exact previous object generation, upload only the named policy with
+  a generation precondition, and compare the downloaded result.
 - Write only under `./vdr-cloud-output/`. The operator reviews and versions the
   output manually or through GitOps. Always start with a clean directory: remove
   or archive any existing `./vdr-cloud-output/` before a run so that stale
   `scope-*.json` files do not contaminate the inventory merge, and artifacts from
   prior runs do not influence the current evaluation.
+- For an incremental update, preserve existing rules and attestations, inventory
+  every retained scope, and add only evidence-backed assignments. Historical
+  assignments are retained context, not fresh operator attestations.
 - For a fresh evaluation, do not read or adopt existing `assignment-plan.json`
   or `vdr-cloud.yaml` files. Run the full operator interview fresh for Class,
   agency scope, and consequence; never treat historical artifacts or prior runs
   as current operator attestations.
-- **`vdr-cloud.yaml` is a proposed integration contract. `trivy-plugin-vdr`
-  does not consume it today.** State this in every handoff, exactly as the
-  `TerraformAssetClassifications` sidecar does. Until plugin-side consumption
-  lands, the document is a reviewed record of impact assignments, not a runtime
-  input.
+- **TSW consumes `vdr-cloud.yaml`; `trivy-plugin-vdr` does not.** Verify the
+  consumer's supported types and collection capabilities before claiming runtime
+  coverage. Published rules for undeployed support remain pending rollout.
 - Treat the document as the **primary** assignment surface for every inventoried
   cloud resource. Per-resource `vdr.fedramp.io/*` tags remain valid but are
   demoted to the exception/override mechanism.
@@ -71,6 +78,21 @@ assigning profiles. It defines direct vectors, the optional archetype system,
 allowed trace reasons, the five-question interview, availability calibration,
 all 27 vector combinations, and examples. The governed trace registry and its
 `reason_codes.py` classifier are shared, not duplicated.
+
+For control assets, read `references/control-assets.md` before assigning profiles.
+Do not score every secret, key or IAM object alike or treat a service account as
+a secret. Discovery reads resource/IAM-policy metadata only; never secret versions,
+key material, VM metadata values or function environment values.
+Group service-account keys under their owning account for scoring, while keeping
+each full key URI in inventory and the coverage ledger for precise SCC joins.
+Inherit the owner's complete profile after explicit key overrides/rules and
+before scope/global defaults; do not emit redundant per-key rules. See the
+control-asset reference for scoped owner matching and credential-specific AR.
+
+Group KMS CryptoKeys under their exact owning KeyRing for SIP and multiAgency.
+Explicit key labels/rules win per attribute; otherwise inherit the ring's
+resolved values before scope/global defaults. Keep full key paths in inventory
+and record parent resolution evidence; do not emit redundant per-key rules.
 
 ## Workflow
 
@@ -236,8 +258,12 @@ Write `./vdr-cloud-output/assignment-plan.json` (shape in
 correctly covers each coherent group:
 
 - Prefer `nameRules` with exact primary identifiers (see the identifier table).
-  A name glob may cover a group only when every current match shares the
-  assigned profile; always pin `type`.
+  Use `match` for globs or `matchRegex` for a whole-identifier regular expression,
+  never both. A grouped rule may cover resources only when every current match
+  shares the assigned profile and review rationale; always pin `type`. Explicit
+  alternation is useful for a finite group without admitting unrelated identities.
+  Review the expanded match set in the ledger, including unexpected matches;
+  names alone do not establish equal authority or availability requirements.
 - Use `tagRules` only over a verified-coherent operator taxonomy.
 - Use `networkRules` only when every relevant network-attached resource on that
   VPC/subnet shares the profile.
@@ -258,6 +284,11 @@ from a broader rule.
 
 Render the document and author the coverage ledger, then validate without cloud
 access:
+
+Regex rules require `regex>=2024.11.4` in the Python environment running the
+renderer, validator and delta helper; glob-only use remains standard-library
+matching. Both the skill and TSW use the same bounded full-match implementation.
+See the schema reference for regex syntax, YAML escaping and safety limits.
 
 ```bash
 python3 <skill-dir>/scripts/render_cloud_config.py \
@@ -284,7 +315,8 @@ python3 <skill-dir>/scripts/validate_cloud_config.py \
 ```
 
 The validator re-derives every assignment through the actual precedence chain
-(tag override → nameRule → tagRule → networkRule → typeRule → scope → defaults →
+(tag override → nameRule → tagRule → networkRule → typeRule → owning SA SIP for
+SA keys, or owning KeyRing SIP/multiAgency for CryptoKeys → scope → defaults →
 fail-loud), validates every SIP value against the shared governed registry,
 checks the inventory equation, detects zero-match and shadowed rules, flags a
 `networkRule` on a non-network-attached type, cross-checks the coverage ledger,
@@ -305,8 +337,9 @@ fictional rendered two-scope document.
 Report totals by scope, status (`operator-confirmed`, `agent-inferred`,
 `builtin-pattern`), and confidence. Repeat the non-high-confidence manual-review
 list in the terminal; do not hide it behind the YAML. State the
-proposed-integration-contract caveat plainly: no current scanner consumes
-`vdr-cloud.yaml`. List any failed scopes and any existing-tag override
+consumer caveat plainly: TSW consumes `vdr-cloud.yaml`, but `trivy-plugin-vdr`
+does not; runtime coverage requires the deployed collectors and type support.
+List any failed scopes and any existing-tag override
 conflicts. Tell the operator to review all three artifacts and version them
 manually or through the owning GitOps repository. Re-run the skill after estate,
 Class, or scope changes.

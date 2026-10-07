@@ -1,6 +1,6 @@
 ---
 name: generate-k8s-vdr-configmap
-description: Generate or update the canonical trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope, and independently dimensional CR/IR/AR asset security-impact profiles; support direct vectors, compositional decision traces, or named archetypes; inventory Kubernetes workloads read-only, make evidence-backed best-effort assignments when operator detail is incomplete, annotate confidence and manual-review needs in the YAML and coverage ledger, validate complete coverage, and never apply anything.
+description: Generate or fully reassess the trivy-plugin-vdr vdr-fedramp scoring ConfigMap from FedRAMP Class, agency scope and independently dimensional CR/IR/AR profiles. Inventory workloads read-only and emit confidence, manual-review evidence and a coverage ledger; never apply anything. For coverage-only updates preserving existing scores, use update-k8s-vdr-configmap instead.
 ---
 
 # Generate Kubernetes VDR ConfigMap
@@ -8,6 +8,9 @@ description: Generate or update the canonical trivy-plugin-vdr vdr-fedramp scori
 Interview the operator, inspect the selected Kubernetes cluster read-only, and
 write the governed scoring artifacts consumed by `trivy-plugin-vdr`.
 In commands below, resolve `<skill-dir>` to the directory containing this file.
+
+For an additive coverage update that must preserve existing scores, use the
+separate `../update-k8s-vdr-configmap/SKILL.md` workflow instead.
 
 ## Ground rules
 
