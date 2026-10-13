@@ -123,7 +123,10 @@ fields so this artifact cannot silently expand beyond its intended scope.
 
 Summarize SSO, ASO, the ceiling, confidence, assumptions, and unresolved review
 items. State that ceiling use is optional. If the operator wants to use it,
-show—but do not write—either handoff:
+show—but do not write—either handoff. The `trivy vdr` form applies only to
+Kubernetes customers who have chosen to install trivy-plugin-vdr to preview
+scoring in a live environment; it is not a prerequisite, so do not tell the
+operator to install it:
 
 ```yaml
 data:
