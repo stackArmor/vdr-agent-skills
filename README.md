@@ -18,7 +18,7 @@ policy object is a separate action allowed only when explicitly requested.
 ## Which skills need what access
 
 Start with `generate-security-objectives`: it needs no environment access, and
-its optional ceiling feeds scoring for every environment type.
+its optional ceiling caps the CR/IR/AR values used when PAIN scores are calculated.
 
 | Access needed | Skills |
 |---|---|
