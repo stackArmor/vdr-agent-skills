@@ -107,6 +107,10 @@ synthetic scoped IAM allow bindings, projects, firewalls/networks and VM/contain
 release assets. These controls are classified by contents, authority and outage
 dependencies, independently across CR/IR/AR; they do not inherit one family-wide
 score. See the skill's control-asset reference for evidence and matching identity.
+When Cloud Asset Inventory is unavailable, discovery uses the regular service
+APIs for these families and their attached IAM policies. `--no-asset-api` forces
+this path. Disabled or failed queries are excluded with recorded reasons while
+other services continue; exclusions do not prove resource absence.
 
 Cloud discovery also includes GKE clusters/node pools, fleet memberships, Binary
 Authorization policies, subnets and load-balancer proxies. Cluster infrastructure

@@ -253,7 +253,166 @@ class GcpInventoryTests(unittest.TestCase):
         # specific failure wording: the degraded-inventory warning legitimately
         # names both families in the list of what the fallback covers.
         self.assertFalse([w for w in scope["warnings"] if "were not enumerated" in w and ("Pub/Sub" in w or "AlloyDB" in w)])
-        self.assertTrue(any("Control-asset coverage unavailable" in w for w in scope["warnings"]))
+        self.assertFalse(any("Control-asset coverage unavailable" in w for w in scope["warnings"]))
+
+    def service_runner(self, responses=None, failures=None):
+        calls = []
+        responses = responses or {}
+        failures = failures or {}
+
+        def run(args):
+            calls.append(args)
+            joined = " ".join(args)
+            if args[:3] == ["gcloud", "asset", "list"]:
+                raise AssertionError("Cloud Asset must not be called")
+            for needle, error in failures.items():
+                if needle in joined:
+                    raise error
+            if "auth list" in joined:
+                return json.dumps([{"account": "ops@acme.example"}])
+            for needle, payload in responses.items():
+                if needle in joined:
+                    return json.dumps(payload)
+            return "[]"
+
+        run.calls = calls
+        return run
+
+    def test_service_api_controls_nested_resources_and_binding_identity(self):
+        ring = "projects/acme-prod/locations/us-east4/keyRings/main"
+        account = "worker@acme-prod.iam.gserviceaccount.com"
+        key = "projects/acme-prod/serviceAccounts/456/keys/key1"
+        repository = "projects/acme-prod/locations/us-east4/repositories/releases"
+        image = repository + "/dockerImages/app%2Fworker@sha256:abc"
+        policy = {"version": 3, "bindings": [{"role": "roles/viewer", "members": ["user:a"],
+                                             "condition": {"expression": "true"}}]}
+        runner = self.service_runner({
+            "projects describe": {"projectId": "acme-prod", "projectNumber": "123"},
+            "projects get-iam-policy": policy,
+            "secrets locations list": [{"locationId": "us-east4"}],
+            "secrets list --location": [{"name": "projects/123/locations/us-east4/secrets/regional"}],
+            "secrets list": [{"name": "projects/123/secrets/db", "replication": {"automatic": {}},
+                              "payload": "DO-NOT-STORE"}],
+            "kms locations list": [{"locationId": "us-east4"}, {"locationId": "global"}],
+            "kms keyrings list --location us-east4": [{"name": ring}],
+            "kms keyrings list --location global": [{"name": ring.replace("us-east4", "global")}],
+            "kms keys list --location us-east4": [{"name": ring + "/cryptoKeys/db"}],
+            "kms keys list --location global": [{"name": ring.replace("us-east4", "global") + "/cryptoKeys/db"}],
+            "iam service-accounts list": [{"email": account, "uniqueId": "456"}],
+            "iam service-accounts keys list": [{"name": key, "keyType": "USER_MANAGED", "privateKeyData": "DO-NOT-STORE"}],
+            "iam roles list": [{"name": "projects/acme-prod/roles/deployer"}],
+            "iam roles describe": {"name": "projects/acme-prod/roles/deployer", "includedPermissions": ["run.services.update"]},
+            "compute networks subnets list": [{"name": "nodes", "region": "us-east4", "network": "projects/acme-prod/global/networks/prod"}],
+            "compute networks list": [{"name": "prod"}],
+            "compute firewall-rules list": [{"name": "allow-web", "network": "projects/acme-prod/global/networks/prod"}],
+            "compute images list": [{"name": "base"}],
+            "compute target-https-proxies list": [{"name": "web"}],
+            "container fleet memberships list": [{"name": "projects/acme-prod/locations/global/memberships/prod"}],
+            "artifacts repositories list": [{"name": repository, "format": "DOCKER"}],
+            "artifacts docker images list": [{"package": "us-east4-docker.pkg.dev/acme-prod/releases/app/worker", "version": "sha256:abc", "metadata": {"name": image}}],
+            "container clusters list": [{"name": "prod", "location": "us-east4"}],
+            "container node-pools list": [{"name": "default", "config": {"metadata": {"token": "DO-NOT-STORE"}}}],
+            "container binauthz policy export": {"defaultAdmissionRule": {"evaluationMode": "ALWAYS_ALLOW"}},
+        })
+        scope = self.mod.inventory_gcp("acme-prod", [], runner=runner, use_asset_api=False)
+        resources = scope["resources"]
+        by_type = {}
+        for resource in resources:
+            by_type.setdefault(resource["type"], []).append(resource)
+        self.assertTrue(set(self.mod.CONTROL_TYPES) - {self.mod.BINDING_TYPE, "bigquery.googleapis.com/Dataset", "cloudfunctions.googleapis.com/Function"} <= set(by_type))
+        self.assertEqual({ring + "/cryptoKeys/db", ring.replace("us-east4", "global") + "/cryptoKeys/db"},
+                         {r["identifier"] for r in by_type["cloudkms.googleapis.com/CryptoKey"]})
+        self.assertEqual(account, by_type["iam.googleapis.com/ServiceAccount"][0]["identifier"])
+        self.assertEqual(key, by_type["iam.googleapis.com/ServiceAccountKey"][0]["identifier"])
+        self.assertEqual(image, by_type["artifactregistry.googleapis.com/DockerImage"][0]["identifier"])
+        self.assertEqual("prod", by_type["compute.googleapis.com/Subnetwork"][0]["network"])
+        control = load_script("gcp_control_assets")
+        expected = self.mod._map_asset(control.binding_assets({
+            "name": "//cloudresourcemanager.googleapis.com/projects/123",
+            "assetType": "cloudresourcemanager.googleapis.com/Project", "iamPolicy": policy})[0], [], "acme-prod")
+        self.assertEqual(expected, by_type[self.mod.BINDING_TYPE][0])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(scope))
+        self.assertFalse(scope["warnings"][1:])
+        for call in runner.calls:
+            if call[0] == "gcloud" and call[1:3] != ["auth", "list"]:
+                self.assertEqual("acme-prod", call[call.index("--project") + 1])
+        image_call = next(call for call in runner.calls if call[1:4] == ["compute", "images", "list"])
+        self.assertIn("--no-standard-images", image_call)
+
+    def test_failed_services_are_excluded_without_losing_other_resources(self):
+        runner = self.service_runner(
+            {"compute instances list": [{"name": "web", "zone": "us-east4-a"}]},
+            {"storage buckets list": RuntimeError("SERVICE_DISABLED: Storage API is disabled"),
+             "sql instances list": RuntimeError("PERMISSION_DENIED: sql.instances.list"),
+             "bq ls": FileNotFoundError("bq is not installed")})
+        scope = self.mod.inventory_gcp("acme-prod", [], runner=runner, use_asset_api=False)
+        self.assertEqual(["web"], [r["identifier"] for r in scope["resources"]])
+        results = scope["provenance"]["collectionResults"]
+        statuses = {" ".join(r["command"]): r["status"] for r in results}
+        self.assertEqual("service-disabled", next(s for c, s in statuses.items() if "storage buckets list" in c))
+        self.assertEqual("unavailable", next(s for c, s in statuses.items() if "sql instances list" in c))
+        self.assertTrue(any("PERMISSION_DENIED" in w for w in scope["warnings"]))
+        self.assertEqual(results, self.mod.merge_scopes([scope])["scopes"][0]["provenance"]["collectionResults"])
+
+    def test_unavailable_cloud_asset_switches_to_service_apis_once(self):
+        service = self.service_runner({"secrets list": [{"name": "projects/123/secrets/db"}]})
+        asset_calls = []
+
+        def runner(args):
+            if args[:3] == ["gcloud", "asset", "list"]:
+                asset_calls.append(args)
+                raise RuntimeError("SERVICE_DISABLED: cloudasset.googleapis.com")
+            return service(args)
+
+        scope = self.mod.inventory_gcp("acme-prod", [], runner=runner)
+        self.assertEqual(1, len(asset_calls))
+        self.assertEqual("per-service-fallback", scope["provenance"]["inventorySource"])
+        self.assertEqual("db", scope["resources"][0]["identifier"])
+
+    def test_cloud_asset_policy_failure_uses_attached_service_policy(self):
+        uri = "//secretmanager.googleapis.com/projects/123/secrets/db"
+        service = self.service_runner({"secrets get-iam-policy": {
+            "bindings": [{"role": "roles/secretmanager.secretAccessor", "members": ["user:a"]}]}})
+
+        def runner(args):
+            if args[:3] == ["gcloud", "asset", "list"]:
+                if "iam-policy" in args:
+                    raise RuntimeError("PERMISSION_DENIED")
+                return json.dumps([{"assetType": "secretmanager.googleapis.com/Secret", "name": uri}])
+            return service(args)
+
+        scope = self.mod.inventory_gcp("acme-prod", [], runner=runner)
+        self.assertEqual("asset-api", scope["provenance"]["inventorySource"])
+        self.assertEqual(2, len(scope["resources"]))
+        self.assertEqual(uri, scope["resources"][1]["metadata"]["attached_resource"])
+        self.assertFalse(any("secrets list" in " ".join(c) for c in service.calls))
+
+    def test_workload_service_metadata_and_dataset_policy(self):
+        dataset_uri = "//bigquery.googleapis.com/projects/acme-prod/datasets/events"
+        runner = self.service_runner({
+            "sql instances list": [{"name": "primary", "region": "us-east4", "settings": {"userLabels": {"env": "prod"}, "ipConfiguration": {"privateNetwork": "projects/acme-prod/global/networks/prod"}}}],
+            "bq ls": [{"id": "acme-prod:events", "datasetReference": {"datasetId": "events"}}],
+            "bq show": {"location": "US", "labels": {"env": "prod"}},
+            "bq get-iam-policy": {"bindings": [{"role": "roles/bigquery.dataViewer", "members": ["user:a"]}]},
+            "run services list": [{"metadata": {"name": "api", "labels": {"cloud.googleapis.com/location": "us-east4"}, "annotations": {"run.googleapis.com/binary-authorization": "default"}},
+                                   "spec": {"env": {"PASSWORD": "DO-NOT-STORE"}}}],
+            "functions list": [{"name": "projects/acme-prod/locations/us-east4/functions/fn", "environmentVariables": {"PASSWORD": "DO-NOT-STORE"}}],
+            "alloydb clusters list": [{"name": "projects/acme-prod/locations/us-east4/clusters/db"}],
+            "alloydb instances list": [{"name": "projects/acme-prod/locations/us-east4/clusters/db/instances/primary"}],
+        })
+        scope = self.mod.inventory_gcp("acme-prod", [], runner=runner, use_asset_api=False)
+        by_type = {r["type"]: r for r in scope["resources"]}
+        self.assertEqual("//cloudsql.googleapis.com/projects/acme-prod/instances/primary", by_type["sqladmin.googleapis.com/Instance"]["providerUri"])
+        self.assertEqual("prod", by_type["sqladmin.googleapis.com/Instance"]["network"])
+        self.assertEqual("events", by_type["bigquery.googleapis.com/Dataset"]["identifier"])
+        self.assertEqual(dataset_uri, by_type[self.mod.BINDING_TYPE]["metadata"]["attached_resource"])
+        self.assertEqual("default", by_type["run.googleapis.com/Service"]["metadata"]["binaryAuthorizationAnnotation"])
+        self.assertEqual("primary", by_type["alloydb.googleapis.com/Instance"]["identifier"])
+        self.assertNotIn("DO-NOT-STORE", json.dumps(scope))
+        instance_call = next(c for c in runner.calls if c[1:4] == ["alloydb", "instances", "list"])
+        self.assertEqual("db", instance_call[instance_call.index("--cluster") + 1])
+        dataset_call = next(c for c in runner.calls if c[:2] == ["bq", "ls"])
+        self.assertIn("--max_results", dataset_call)
 
     def test_asset_api_requests_every_scoreable_family(self):
         """The Asset API path and the fallback must agree on what is in scope.

@@ -138,9 +138,26 @@ python3 <skill-dir>/scripts/inventory_cloud_resources.py \
 ```
 
 It prefers Cloud Asset Inventory (`gcloud asset list`) and falls back to
-per-service commands when the Asset API is unavailable, recording an explicit
-degraded-inventory warning that names what could not be enumerated (add
-`--no-asset-api` to force the fallback). AWS:
+the regular service APIs when Cloud Asset is disabled, denied or otherwise
+unavailable. Both paths discover the supported workload, data and control
+families, using shared identifiers and metadata allowlists. Add `--no-asset-api`
+to use service APIs for both resources and IAM policies without any Cloud Asset
+calls. If only Cloud Asset IAM-policy discovery fails, retain its resource
+inventory and query attached policies through the service APIs.
+
+A disabled or failed service query contributes no resources from that query;
+continue with the other services and retain successful results. Never enable an
+API during discovery. Record each query in `provenance.collectionResults` with
+its target, status (`listed`, `service-disabled`, `unavailable`), count and failure
+reason where applicable, and surface exclusions in `warnings`. Exclusion means
+no resources were included from that query, not proof that none exist: permission,
+authentication, CLI, quota and transport failures remain coverage gaps. An empty
+successful list is evidence of no visible resources in the queried scope. Nested
+enumeration covers locations, KMS rings/keys, service-account keys, repositories/
+images, AlloyDB clusters/instances and GKE node pools. IAM metadata remains
+attached-policy evidence, not complete effective access.
+
+AWS:
 
 ```bash
 python3 <skill-dir>/scripts/inventory_cloud_resources.py \

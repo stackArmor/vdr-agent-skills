@@ -6,8 +6,11 @@ secret. HA, US-only residency and finding applicability are separate controls.
 
 ## Evidence and identifiers
 
-Inventory metadata only through Cloud Asset Inventory RESOURCE and IAM_POLICY.
-CAI is eventually consistent (IAM policies can lag); retain that caveat.
+Inventory metadata through Cloud Asset Inventory RESOURCE/IAM_POLICY when
+available, otherwise through the regular service APIs. Both use the same asset
+mapping, identifiers, metadata allowlists and synthetic binding derivation.
+CAI is eventually consistent (IAM policies can lag); service queries are separate
+reads, not an atomic snapshot. Retain the applicable caveat.
 Full KMS paths distinguish identically named keys in different rings/regions.
 Service accounts use email for rule matching and numeric-ID URI aliases for
 SCC joins. Keys use full paths and never include public/private key data.
@@ -123,5 +126,8 @@ Only network-attached assets support network rules. Secrets, KMS, IAM and
 projects do not get network attachments or inferred internet-unreachable claims.
 Function metadata, images and artifact assets currently have no network attachment
 in this collection path; do not author network rules for them.
-CAI failure or fallback gaps must be visible and must not produce a claim of
-complete control-asset coverage.
+Cloud Asset unavailability triggers service discovery, including control assets.
+A disabled/failed service query contributes no records and never blocks other
+services. Preserve its status/reason in `provenance.collectionResults` and surface
+the exclusion in warnings; failures do not establish resource absence or complete
+control-asset coverage. Never enable services or read secret/key payloads.

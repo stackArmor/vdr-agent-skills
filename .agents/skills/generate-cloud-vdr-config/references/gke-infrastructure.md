@@ -16,9 +16,12 @@ Record the cluster owning each node pool and the node subnet separately from
 other similarly named subnets: a PGA finding on an endpoint subnet does not
 describe the cluster's node subnet.
 
-The per-service fallback lists GKE clusters and their returned node pools and
-reads the project Binary Authorization policy. API-disabled/permission failures
-remain explicit coverage warnings; never enable services during discovery.
+The per-service fallback lists GKE clusters/node pools, fleet memberships,
+subnets and load-balancer proxies, and reads the project Binary Authorization
+policy. List node pools separately when cluster listings omit them.
+Disabled or failed queries contribute no records from that query and do not
+block other services; retain their status and reason as explicit coverage warnings.
+Never enable services during discovery.
 An unavailable policy is unknown, not evidence of an absent policy. CAI is
 eventually consistent, so use current read-only `gcloud container clusters
 describe` and `gcloud container binauthz policy export` when enforcement matters.

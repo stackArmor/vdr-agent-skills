@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gcp_control_assets import CONTROL_TYPES, BINDING_TYPE, binding_assets, primary_identifier, safe_metadata, binary_authorization_settings
+from gcp_service_inventory import service_assets, service_policies
 
 GCP_ASSET_TYPES = [
     "container.googleapis.com/Cluster",
@@ -249,198 +250,17 @@ def _gcp_asset_inventory(project, runner, provider_patterns):
     return [_map_asset(asset, provider_patterns, project) for asset in _load_json(output)]
 
 
-def _gcp_service_inventory(project, runner, provider_patterns, warnings):
-    resources = []
-
-    buckets = _load_json(runner(["gcloud", "storage", "buckets", "list",
-                                 "--project", project, "--format", "json"]))
-    for bucket in buckets:
-        resources.append(_build_resource(
-            "storage.googleapis.com/Bucket", bucket.get("name"),
-            bucket.get("location"), bucket.get("labels") or {}, None, None,
-            provider_patterns))
-
-    instances = _load_json(runner(["gcloud", "sql", "instances", "list",
-                                   "--project", project, "--format", "json"]))
-    for instance in instances:
-        settings = instance.get("settings") or {}
-        tags = settings.get("userLabels") or {}
-        private_network = (settings.get("ipConfiguration") or {}).get("privateNetwork")
-        network = _last_segment(private_network) if private_network else None
-        resources.append(_build_resource(
-            "sqladmin.googleapis.com/Instance", instance.get("name"),
-            instance.get("region"), tags, network, None, provider_patterns))
-
-    computes = _load_json(runner(["gcloud", "compute", "instances", "list",
-                                  "--project", project, "--format", "json"]))
-    for compute in computes:
-        zone = _last_segment(compute.get("zone") or "")
-        region = zone.rsplit("-", 1)[0] if zone else None
-        nics = compute.get("networkInterfaces") or []
-        network = None
-        subnet = None
-        if nics:
-            if nics[0].get("network"):
-                network = _last_segment(nics[0]["network"])
-            if nics[0].get("subnetwork"):
-                subnet = _last_segment(nics[0]["subnetwork"])
-        # Copy only name/zone/labels/networkInterfaces; never metadata blobs.
-        resources.append(_build_resource(
-            "compute.googleapis.com/Instance", compute.get("name"), region,
-            compute.get("labels") or {}, network, subnet, provider_patterns))
-
-    try:
-        datasets = _load_json(runner(["bq", "ls", "--project_id", project,
-                                      "--format", "json"]))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append(
-            "BigQuery datasets were not enumerated for project %s: %s"
-            % (project, first_line))
-    else:
-        for dataset in datasets:
-            identifier = (dataset.get("id")
-                          or (dataset.get("datasetReference") or {}).get("datasetId"))
-            resources.append(_build_resource(
-                "bigquery.googleapis.com/Dataset", identifier,
-                dataset.get("location"), dataset.get("labels") or {}, None, None,
-                provider_patterns))
-
-    try:
-        run_services = _load_json(runner(["gcloud", "run", "services", "list",
-                                          "--project", project, "--format", "json"]))
-        for svc in run_services:
-            svc_name = (svc.get("metadata") or {}).get("name") or svc.get("name")
-            svc_labels = (svc.get("metadata") or {}).get("labels") or svc.get("labels") or {}
-            svc_region = ((svc.get("metadata") or {}).get("labels") or {}).get("cloud.googleapis.com/location") or svc.get("region")
-            resources.append(_build_resource(
-                "run.googleapis.com/Service", svc_name, svc_region, svc_labels, None, None, provider_patterns))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append("Cloud Run services were not enumerated for project %s: %s" % (project, first_line))
-
-    try:
-        run_jobs = _load_json(runner(["gcloud", "run", "jobs", "list",
-                                      "--project", project, "--format", "json"]))
-        for job in run_jobs:
-            job_name = (job.get("metadata") or {}).get("name") or job.get("name")
-            job_labels = (job.get("metadata") or {}).get("labels") or job.get("labels") or {}
-            job_region = ((job.get("metadata") or {}).get("labels") or {}).get("cloud.googleapis.com/location") or job.get("region")
-            resources.append(_build_resource(
-                "run.googleapis.com/Job", job_name, job_region, job_labels, None, None, provider_patterns))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append("Cloud Run jobs were not enumerated for project %s: %s" % (project, first_line))
-
-    try:
-        functions = _load_json(runner(["gcloud", "functions", "list",
-                                       "--project", project, "--format", "json"]))
-        for fn in functions:
-            fn_name = _last_segment(fn.get("name") or "")
-            fn_labels = fn.get("labels") or {}
-            fn_region = _last_segment(fn.get("name", "").rsplit("/functions/", 1)[0]) if "/functions/" in fn.get("name", "") else fn.get("region")
-            resources.append(_build_resource(
-                "cloudfunctions.googleapis.com/Function", fn_name, fn_region, fn_labels if isinstance(fn_labels, dict) else {}, None, None, provider_patterns))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append("Cloud Functions were not enumerated for project %s: %s" % (project, first_line))
-
-    try:
-        topics = _load_json(runner(["gcloud", "pubsub", "topics", "list",
-                                    "--project", project, "--format", "json"]))
-        for topic in topics:
-            topic_name = _last_segment(topic.get("name") or "")
-            topic_labels = topic.get("labels") or {}
-            resources.append(_build_resource(
-                "pubsub.googleapis.com/Topic", topic_name, None,
-                topic_labels if isinstance(topic_labels, dict) else {},
-                None, None, provider_patterns))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append("Pub/Sub topics were not enumerated for project %s: %s" % (project, first_line))
-
-    try:
-        subscriptions = _load_json(runner(["gcloud", "pubsub", "subscriptions", "list",
-                                           "--project", project, "--format", "json"]))
-        for subscription in subscriptions:
-            sub_name = _last_segment(subscription.get("name") or "")
-            sub_labels = subscription.get("labels") or {}
-            resources.append(_build_resource(
-                "pubsub.googleapis.com/Subscription", sub_name, None,
-                sub_labels if isinstance(sub_labels, dict) else {},
-                None, None, provider_patterns))
-    except RuntimeError as exc:
-        first_line = str(exc).splitlines()[0] if str(exc) else ""
-        warnings.append("Pub/Sub subscriptions were not enumerated for project %s: %s" % (project, first_line))
-
-    # ``--region=-`` is the all-regions form. A project with the AlloyDB API
-    # disabled returns an empty list rather than failing, which is the correct
-    # answer: no API, no clusters.
-    for kind, asset_type in (("clusters", "alloydb.googleapis.com/Cluster"),
-                             ("instances", "alloydb.googleapis.com/Instance")):
-        try:
-            entries = _load_json(runner(["gcloud", "alloydb", kind, "list",
-                                         "--project", project, "--region", "-",
-                                         "--format", "json"]))
-            for entry in entries:
-                full_name = entry.get("name") or ""
-                region = None
-                if "/locations/" in full_name:
-                    region = full_name.split("/locations/", 1)[1].split("/", 1)[0]
-                labels = entry.get("labels") or {}
-                resources.append(_build_resource(
-                    asset_type, _last_segment(full_name), region,
-                    labels if isinstance(labels, dict) else {},
-                    None, None, provider_patterns))
-        except RuntimeError as exc:
-            first_line = str(exc).splitlines()[0] if str(exc) else ""
-            warnings.append("AlloyDB %s were not enumerated for project %s: %s"
-                            % (kind, project, first_line))
-
-    # GKE infrastructure is cloud inventory even though Kubernetes workloads
-    # are maintained by the ConfigMap skills. Query metadata only.
-    try:
-        clusters = _load_json(runner([
-            "gcloud", "container", "clusters", "list", "--project", project, "--format", "json",
-        ]))
-        for cluster in clusters:
-            location = cluster.get("location") or cluster.get("zone")
-            cluster_name = cluster.get("name")
-            if not location or not cluster_name:
-                warnings.append("GKE cluster identity incomplete for project %s" % project)
-                continue
-            uri = "//container.googleapis.com/projects/%s/locations/%s/clusters/%s" % (project, location, cluster_name)
-            resources.append(_map_asset({
-                "assetType": "container.googleapis.com/Cluster", "name": uri,
-                "resource": {"location": location, "data": cluster},
-            }, provider_patterns, project))
-            for pool in cluster.get("nodePools") or []:
-                resources.append(_map_asset({
-                    "assetType": "container.googleapis.com/NodePool",
-                    "name": uri + "/nodePools/" + pool["name"],
-                    "resource": {"location": location, "data": pool},
-                }, provider_patterns, project))
-    except RuntimeError as exc:
-        warnings.append("GKE clusters/node pools were not enumerated for project %s: %s" % (project, str(exc).splitlines()[0]))
-    try:
-        policy = _load_json(runner([
-            "gcloud", "container", "binauthz", "policy", "export", "--project", project, "--format", "json",
-        ]))
-        if isinstance(policy, dict):
-            resources.append(_map_asset({
-                "assetType": "binaryauthorization.googleapis.com/Policy",
-                "name": "//binaryauthorization.googleapis.com/projects/%s/policy" % project,
-                "resource": {"location": "global", "data": policy},
-            }, provider_patterns, project))
-    except RuntimeError as exc:
-        warnings.append("Binary Authorization policy unavailable for project %s: %s" % (project, str(exc).splitlines()[0]))
-    return resources
+def _gcp_service_inventory(project, runner, provider_patterns, warnings,
+                           collection_results):
+    return [_map_asset(asset, provider_patterns, project) for asset in
+            service_assets(project, runner, warnings, collection_results)]
 
 
 def _asset_fallback_warning(project, error_line):
-    message = ("Cloud Asset API was not used for project %s; the per-service "
-               "fallback covers buckets, SQL, AlloyDB, compute instances, BigQuery, Cloud Run, Cloud Functions, Pub/Sub and GKE; Binary Authorization policy reads may fail separately."
-               % project)
+    message = ("Cloud Asset API was not used for project %s; inventory uses "
+               "the regular service APIs for workload, data and control assets. "
+               "Disabled or failed queries contribute no records and are "
+               "reported individually." % project)
     if error_line:
         message += " Cloud Asset API error: %s" % error_line
     return message
@@ -449,6 +269,7 @@ def _asset_fallback_warning(project, error_line):
 def inventory_gcp(project, patterns, runner=run_command, use_asset_api=True):
     provider_patterns = [p for p in patterns if p.get("provider") == "gcp"]
     warnings = []
+    collection_results = []
     caller_identity = _gcp_caller_identity(runner)
 
     resources = []
@@ -458,36 +279,44 @@ def inventory_gcp(project, patterns, runner=run_command, use_asset_api=True):
         try:
             resources = _gcp_asset_inventory(project, runner, provider_patterns)
             inventory_source = "asset-api"
-        except RuntimeError as exc:
-            asset_error_line = str(exc).splitlines()[0] if str(exc) else ""
+        except (RuntimeError, OSError, ValueError) as exc:
+            asset_error_line = " ".join(str(exc).split())
 
     if inventory_source is None:
         resources = _gcp_service_inventory(project, runner, provider_patterns,
-                                           warnings)
+                                           warnings, collection_results)
         inventory_source = "per-service-fallback"
         warnings.insert(0, _asset_fallback_warning(project, asset_error_line))
-        warnings.append("Control-asset coverage unavailable in per-service fallback: secrets, KMS, IAM identities/keys/roles, projects, networks/firewalls/subnets, load-balancer proxies and fleet memberships were not enumerated.")
 
-    # IAM allow bindings are synthesized from policies, not IAM v3 resources.
-    # Keep resource results when policy discovery fails, but expose the gap.
-    try:
-        policies = _load_json(runner([
-            "gcloud", "asset", "list", "--project", project,
-            "--asset-types", ",".join(GCP_ASSET_TYPES),
-            "--content-type", "iam-policy", "--format", "json",
-        ]))
-        for policy in policies:
-            resources.extend(_map_asset(binding, provider_patterns, project)
-                             for binding in binding_assets(policy))
-    except (RuntimeError, ValueError) as exc:
-        warnings.append("IAM binding discovery incomplete for project %s: %s" % (project, str(exc).splitlines()[0]))
+    # --no-asset-api suppresses both RESOURCE and IAM_POLICY calls. If only
+    # CAI policy discovery fails, keep its resources and read policies directly.
+    policies = None
+    if inventory_source == "asset-api":
+        try:
+            policies = _load_json(runner([
+                "gcloud", "asset", "list", "--project", project,
+                "--asset-types", ",".join(GCP_ASSET_TYPES),
+                "--content-type", "iam-policy", "--format", "json",
+            ]))
+        except (RuntimeError, OSError, ValueError) as exc:
+            warnings.append("Cloud Asset IAM policy discovery unavailable for project %s; "
+                            "using service APIs: %s" % (project, " ".join(str(exc).split())))
+    if policies is None:
+        policies = service_policies(project, resources, runner, warnings,
+                                    collection_results)
+    for policy in policies:
+        resources.extend(_map_asset(binding, provider_patterns, project)
+                         for binding in binding_assets(policy))
 
     provenance = {
         "inventorySource": inventory_source,
         "callerIdentity": caller_identity,
         "profile": None,
         "resolvedScope": project,
-        "consistency": "Cloud Asset Inventory is eventually consistent; attached policies do not establish complete inherited or cross-project effective permissions.",
+        "consistency": ("Cloud Asset Inventory is eventually consistent; " if inventory_source == "asset-api" else
+                        "Service APIs are queried independently, not as an atomic snapshot; ") +
+                       "attached policies do not establish complete inherited or cross-project effective permissions.",
+        "collectionResults": collection_results,
     }
 
     return {
@@ -686,7 +515,8 @@ def main(argv=None):
     parser.add_argument("--project")
     parser.add_argument("--profile")
     parser.add_argument("--region", action="append")
-    parser.add_argument("--no-asset-api", action="store_true")
+    parser.add_argument("--no-asset-api", action="store_true",
+                        help="Use regular service APIs for resources and IAM policies; never call Cloud Asset")
     default_patterns = (Path(__file__).parent.parent / "references"
                         / "managed-resource-patterns.json")
     parser.add_argument("--patterns", default=str(default_patterns))

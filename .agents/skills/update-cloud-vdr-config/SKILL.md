@@ -47,6 +47,11 @@ interview/generation workflow. Run its `scripts/inventory_cloud_resources.py`
 once per confirmed scope, writing only this run's exact outputs. Pass explicit
 GCP projects or AWS profiles/regions. Merge an explicit list of those files;
 never merge a glob containing prior runs. Keep failed/degraded scope warnings.
+If Cloud Asset is unavailable, the generator uses regular service APIs for
+resources and attached IAM policies; `--no-asset-api` forces that path. Disabled
+or failed service queries contribute no records and do not block other services.
+Preserve their exclusions in warnings and `provenance.collectionResults`; do not
+interpret a failed query as proof of absence or permission to remove old rules.
 Read metadata only: no Secret versions, key material, environment values,
 instance user-data, or credential files.
 

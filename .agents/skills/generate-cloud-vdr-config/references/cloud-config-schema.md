@@ -162,10 +162,10 @@ needs no mapping layer). The match fields `match`, `matchTags` values,
 The exception is `vdr.fedramp.io/IAMBinding`, an explicitly synthetic allow-grant
 type derived from IAM-policy metadata, not a provider-native resource.
 
-Under the GCP Cloud Asset API inventory path, Compute Engine instance `region`
-values are zone-granular (e.g. `us-central1-a`), while the per-service fallback
-records the true region (`us-central1`), so write region globs tolerant of both
-(e.g. `us-central1*`).
+Both GCP discovery paths record a Compute Engine instance's zone in `region`
+(e.g. `us-central1-a`). Older service-inventory snapshots used the true region
+(`us-central1`); use region globs tolerant of both (e.g. `us-central1*`) when
+matching historical inventories.
 
 | Family | Required field | Optional narrowing fields | Notes |
 |---|---|---|---|
