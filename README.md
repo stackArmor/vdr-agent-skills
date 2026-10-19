@@ -2,37 +2,270 @@
 
 > Repository rename: this project was previously named `trivy-plugin-vdr-skills`.
 > GitHub preserves redirects for the old repository URL and Git clients, but new
-> links and checkouts should use `stackArmor/vdr-agent-skills`.
+> links and checkouts should use `stackArmor/vdr-agent-skills` (hyphens between
+> all three words).
 
-Agent skills that capture reviewable security metadata for
-[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) FedRAMP
-VDR/VER scoring. One skill assesses system and agency security objectives
-without infrastructure access; the Kubernetes skills read clusters with
-read-only `kubectl` and write ConfigMaps locally. The Terraform skill
-selectively adds reviewable metadata to CIS Foundations-mapped cloud assets.
-**Infrastructure is never applied by these skills.** Publishing a validated cloud
-policy object is a separate action allowed only when explicitly requested.
+The VDR Agent Skills generate the asset classification that
+[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr) uses for
+FedRAMP VDR/VER scoring. Run them with your AI agent of choice: they interview
+you about your system, read your environment's metadata with read-only CLI
+commands, and produce **Security Impact Profiles (SIPs)** for the assets in
+scope. **Nothing is ever applied to a cluster or cloud account by an agent.**
+
+## Getting started: install and run the skills
+
+### 1. Check the prerequisites
+
+| Requirement | Details | Needed for |
+|-------------|---------|------------|
+| `python3` (>= 3.8) | Runs the inventory/capture scripts. Standard library only — no `pip install` needed. | All skills |
+| `kubectl` (authenticated) | Network access to the cluster API. **Read-only RBAC is sufficient** — `get`/`list` on workloads and namespaces (and, for `capture-dataflow-beta`, NetworkPolicies, mesh resources, and Secrets). | Kubernetes skills (`generate-k8s-vdr-configmap`, `update-k8s-vdr-configmap`, `capture-dataflow-beta`) |
+| `gcloud` and/or `aws` CLI (authenticated, read-only) | `list`/`describe`/`get` and `sts get-caller-identity`. The skills never run a mutating verb. | Cloud skills (`generate-cloud-vdr-config`, `update-cloud-vdr-config`) |
+| `terraform` | Optional, for formatting and offline validation of Terraform edits; never used to apply infrastructure. | `tag-terraform-vdr-assets` |
+
+`generate-security-objectives` needs no live access to Kubernetes or a cloud
+account.
+
+### 2. Install the skills in your agent
+
+#### Claude Code
+
+Claude Code needs **both** commands. Adding the marketplace only registers the
+source; the skills are not visible to the agent until the plugin is installed
+from it.
+
+```
+/plugin marketplace add stackArmor/vdr-agent-skills
+/plugin install trivy-plugin-vdr-skills@trivy-plugin-vdr-skills
+```
+
+#### Antigravity CLI (AGY)
+
+```bash
+agy plugin install https://github.com/stackArmor/vdr-agent-skills
+```
+
+Other Antigravity options:
+
+- **Project / workspace auto-discovery:** when running AGY inside this
+  repository or any project containing the `.agents/skills/` directory, AGY
+  automatically discovers all skills. Confirm discovered skills in chat with
+  `/skills`.
+- **Manual global plugin:** clone or symlink the repository into your global
+  AGY plugins directory:
+  ```bash
+  # Option A: Clone directly into plugins
+  git clone https://github.com/stackArmor/vdr-agent-skills.git ~/.gemini/config/plugins/vdr-agent-skills
+
+  # Option B: Symlink from an existing local clone
+  ln -s /path/to/vdr-agent-skills ~/.gemini/config/plugins/vdr-agent-skills
+  ```
+- **Global skills directory:** copy or symlink the skills into
+  `~/.gemini/config/skills/`:
+  ```bash
+  mkdir -p ~/.gemini/config/skills
+  cp -r .agents/skills/* ~/.gemini/config/skills/
+  ```
+
+Restart AGY or start a new session, then run `/skills` to verify that the
+skills are loaded.
+
+#### OpenAI Codex (CLI and App)
+
+```bash
+npx skills add stackArmor/vdr-agent-skills --agent codex
+```
+
+Other Codex options:
+
+- **Interactive Skill Installer (Codex CLI):** type `$` to open the action
+  menu, select **Skill Installer**, and paste the repository URL:
+  ```
+  https://github.com/stackArmor/vdr-agent-skills
+  ```
+- **Project / workspace level:** Codex automatically discovers skills that
+  follow the Agent Skills standard in `.agents/skills/` (or `.codex/skills/`)
+  at the repository root. When working in this repository, or after copying
+  `.agents/skills/` into your target project, the skills are immediately active.
+- **Global installation:** copy or symlink the skills into your user-level
+  Codex skills directory:
+  ```bash
+  mkdir -p ~/.codex/skills
+  cp -r .agents/skills/* ~/.codex/skills/
+  ```
+
+Restart your Codex session after installation so the runtime indexes the new
+skills.
+
+#### Gemini and other agents
+
+All skills ship under `.agents/skills/`, following the open Agent Skills
+specification (`<skill>/SKILL.md`). Any agent that supports the
+`.agents/skills/` directory standard discovers them automatically when
+operating in the workspace.
+
+> **Troubleshooting: the clone prompts for a password** and ends with
+> `fatal: unable to get password from user`? Check the repository name first.
+> GitHub cannot tell a private repository from a missing one without
+> authentication, so a mistyped name looks like a credentials problem. It
+> usually is not one.
+
+### 3. Run the core skills
+
+Start with the two core skills. Use whichever applies to your environment, or
+both:
+
+| Skill | Target | Output | Live access |
+|-------|--------|--------|-------------|
+| `generate-k8s-vdr-configmap` | Kubernetes workloads | `vdr-fedramp` ConfigMap | `kubectl` |
+| `generate-cloud-vdr-config` | AWS & GCP resources (object storage, VMs, managed SQL, BigQuery, etc.) | `vdr-cloud.yaml` | `aws` / `gcloud` |
+
+Invoke a skill by name or describe your intent, for example:
+
+- *"Set up the FedRAMP scoring ConfigMap for my cluster"*
+- *"Generate the VDR cloud config for my AWS account"*
+
+Then follow this workflow:
+
+1. **Run the skill.** Run `generate-k8s-vdr-configmap` and/or
+   `generate-cloud-vdr-config`, depending on what you operate. The agent asks
+   you questions and walks you through each step.
+2. **Review the output.** Check the generated file for accuracy before
+   deploying, with particular focus on any labels the agent marks as **low
+   confidence** — the classification drives your remediation deadlines.
+3. **Deploy.**
+   - **ConfigMap:** apply it to your cluster yourself (`kubectl apply -f`). It
+     can live in your GitOps repository alongside your other manifests.
+   - **`vdr-cloud.yaml`:** upload it to cloud storage in your environment
+     (e.g., S3 or GCS). This can also be managed through GitOps.
+
+## What the skills produce
+
+The core skills produce two outputs carrying the same classification metadata:
+
+- **Kubernetes workloads** — a `vdr-fedramp` ConfigMap
+- **Cloud resources (AWS & GCP, non-Kubernetes)** — a `vdr-cloud.yaml` file
+
+Both capture your FedRAMP **Certification Class**, **agency scope** (single vs.
+multi-agency), and a security-impact profile for each asset, plus a coverage
+report flagging anything that needs manual review. This metadata drives PAIN
+scoring and `VDR-TFR-PVR` remediation deadlines.
+
+> **Not every asset is classified.** Some assets, such as secrets, KMS keys, and
+> IAM accounts and profiles, are **not** included in the output. Security
+> impact profiles apply only to resources that impact VDR scoring.
 
 ## The skills
 
-### `capture-dataflow-beta` → the `vdr-dataflow` ConfigMap (beta)
+Seven skills ship in the repository. **Run the two core skills.** The other
+five are available for specific needs but are not part of the standard flow.
 
-> **Status:** This skill is in beta and may be deprecated. Treat its schema and
-> generated artifacts as experimental analysis aids rather than a stable
-> long-term interface.
+### Core skills — run these
 
-The skill is useful for discovering and reviewing data flows and
-interrelationships among workloads, services, ingress paths, policy controls,
-and external dependencies in Kubernetes environments. It builds the cluster's
-dataflow evidence for internet-reachability analysis by working through
-evidence sources in stages — declared **NetworkPolicies**, then **service-mesh
-authorization** resources, then optional **Hubble / mesh flow exports**, then
-declared **env / Secret / ConfigMap** connection analysis. It produces the
-`vdr-dataflow` ConfigMap plus per-namespace Mermaid diagrams for operator
-review. The agent-assisted review also records **broker candidates** — possible
-payload paths through cloud brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes
-alone cannot confirm — each with the workload-identity principal to verify
-against IAM later.
+| Skill | Target | Output | Live access |
+|-------|--------|--------|-------------|
+| `generate-k8s-vdr-configmap` | Kubernetes workloads | `vdr-fedramp` ConfigMap | `kubectl` |
+| `generate-cloud-vdr-config` | AWS & GCP resources | `vdr-cloud.yaml` | `aws` / `gcloud` |
+
+### Also available
+
+| Skill | Target | Output | Live access |
+|-------|--------|--------|-------------|
+| `generate-security-objectives` | System and agency security objectives, from documentation and the NIST SP 800-60 catalog | Security objectives file with ceiling | None |
+| `update-k8s-vdr-configmap` | Updating an existing Kubernetes classification | Updated ConfigMap | `kubectl` |
+| `update-cloud-vdr-config` | Updating an existing cloud classification | Updated `vdr-cloud.yaml` | `aws` / `gcloud` |
+| `tag-terraform-vdr-assets` | Terraform-managed assets | Asset tags | See skill |
+| `capture-dataflow-beta` (**Beta**) | Data flows | See skill | See skill |
+
+### `generate-k8s-vdr-configmap` → the SIP-based `vdr-fedramp` ConfigMap
+
+Interviews the operator to capture the canonical scoring attestations: the
+FedRAMP **Certification Class**, **agency scope** (single/multi-agency), and
+per-workload security-impact profiles expressed as direct vectors,
+compositional decision traces, or named archetypes. Emits a central
+`vdr-fedramp` ConfigMap rule for every workload plus an assignment-coverage
+ledger with confidence and manual-review reporting.
+
+### `generate-cloud-vdr-config` → the central `vdr-cloud.yaml`
+
+Extends the central-assignment model to **non-Kubernetes cloud resources**. It
+discovers CIS Foundations-addressed GCP and AWS resource families (object
+storage, VMs, managed SQL, BigQuery datasets, and the rest) with read-only
+`gcloud`/`aws` CLIs, interviews the operator, and emits a single multi-scope
+`vdr-cloud.yaml` (`CloudResourceScoringConfig`) plus an inventory baseline and a
+coverage ledger. Resources are matched by **name, tag, network, or type rules**
+with family-tier precedence, or by whole account/project defaults; each resolves
+FedRAMP Class, agency scope, and a CR/IR/AR security-impact profile
+independently down the chain. This document is the **primary** assignment
+surface, so per-resource `vdr.fedramp.io/*` tags are demoted to
+exceptions/overrides. Provider-managed resources (staging buckets, template
+stores, CDK assets, ...) are matched against a governed catalog and
+**materialized as reviewable medium-confidence rules**, never assumed silently.
+
+For details on the additional skills, see [Additional skill details](#additional-skill-details).
+
+## Security posture: read-only, your credentials
+
+The skills run standard CLI commands through your local `kubectl`, `aws`, and
+`gcloud` installations, using the credentials you already have configured.
+
+- **Read-only verbs only.** The skills and their scripts use only read-only
+  verbs (e.g., `kubectl get` / `list`, `gcloud asset list`, `aws ... describe`)
+  — never `exec`, `apply`, `label`, `patch`, `delete`, or any other mutating
+  verb.
+- **No Terraform deployment.** The Terraform skill never reads state or plan
+  files and never runs `terraform apply`; it edits only operator-approved HCL
+  and validates the resulting diff.
+- **Secret values never leave the cluster.** Where Secret-declared
+  connections are analyzed, values are reduced to `host:port` endpoints in
+  all outputs; credentials are never written to any artifact.
+- **Artifacts stay local** until the operator applies them. Every generated
+  manifest, config file, and label command is written to a local output
+  directory for review; applying or uploading is an explicit operator action
+  (`kubectl apply -f`, an upload to S3/GCS, or a GitOps commit).
+- Operator attestations remain distinct from agent inferences. Missing impact
+  detail does not suppress an objectives artifact, ConfigMap, or cloud config:
+  each skill makes a conservative, evidence-backed assessment and exposes its
+  confidence and review needs. HA is mitigation evidence and never lowers the
+  Availability Requirement.
+
+## How the outputs are consumed
+
+The classification you generate is one input to the PAIN scoring model in
+[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr), which
+combines your assets' security-impact profiles with exploitability, internet
+reachability, and multi-agency scope to set FedRAMP remediation deadlines.
+
+- **`vdr-fedramp` ConfigMap** — read in-cluster; drives PAIN scoring and
+  `VDR-TFR-PVR` remediation deadlines (Certification Class, agency scope, and
+  security-impact-profile rules).
+- **`vdr-cloud.yaml`** — uploaded to cloud storage in your environment (e.g.,
+  S3 or GCS); carries the same classification metadata for non-Kubernetes
+  cloud resources.
+- **`securityRequirementsCeiling`** — optional, in the `vdr-fedramp` ConfigMap
+  or via the corresponding runtime flag; caps profile CR/IR/AR values only
+  when recalculating reported PAIN scores. Its absence is valid and silent.
+- **`vdr-dataflow` ConfigMap (Beta)** — can supply experimental dataflow
+  evidence for internet-reachability determination, but may be changed or
+  deprecated.
+
+For the full methodology, derivations, and design rationale, see the VDR white
+papers at
+[stackarmor.github.io/rfc-fedramp-vdr](https://stackarmor.github.io/rfc-fedramp-vdr).
+See the trivy-plugin-vdr README for the ConfigMap schemas.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Additional skill details
+
+### `update-k8s-vdr-configmap` / `update-cloud-vdr-config`
+
+Update an existing Kubernetes or cloud classification, producing an updated
+`vdr-fedramp` ConfigMap or `vdr-cloud.yaml` respectively. They use the same
+read-only `kubectl` or `aws`/`gcloud` access as the corresponding generate
+skills.
 
 ### `generate-security-objectives` → `security-objectives.json`
 
@@ -58,202 +291,34 @@ The ceiling may be copied into `vdr-fedramp` as
 `securityRequirementsCeiling` or passed to trivy-plugin-vdr with
 `--security-requirements-ceiling`. Using it is optional.
 
-### `generate-k8s-vdr-configmap` → the SIP-based `vdr-fedramp` ConfigMap
-
-Interviews the operator to capture the canonical scoring attestations: the
-FedRAMP **Certification Class**, **agency scope** (single/multi-agency), and
-per-workload security-impact profiles expressed as direct vectors,
-compositional decision traces, or named archetypes. Emits a central
-`vdr-fedramp` ConfigMap rule for every
-workload plus an assignment-coverage ledger with confidence and manual-review
-reporting.
-
-### `update-k8s-vdr-configmap` → additive Kubernetes coverage updates
-
-Reads the current kubectl context and deployed `vdr-fedramp` ConfigMap (or asks
-for the operator's current baseline), then inventories workloads read-only.
-Evaluates only missing assignments; new workloads already covered by a valid
-label, rule or intentional default are left alone. Produces a local candidate,
-gap-only decision ledger and an offline guard report proving that existing
-rules, resolved profiles, defaults, ceilings and attestations are unchanged.
-It does not re-evaluate existing scores or deploy anything.
-
-### `generate-cloud-vdr-config` → the central vdr-cloud.yaml
-
-Extends the central-assignment model to **non-Kubernetes cloud resources**. It
-discovers CIS Foundations-addressed GCP and AWS resource families (object
-storage, VMs, managed SQL, BigQuery datasets, and the rest) with read-only
-`gcloud`/`aws` CLIs, interviews the operator, and emits a single multi-scope
-`vdr-cloud.yaml` (`CloudResourceScoringConfig`) plus an inventory baseline and a
-coverage ledger. Resources are matched by **name, tag, network, or type rules**
-with family-tier precedence, or by whole account/project defaults; each resolves
-FedRAMP Class, agency scope, and a CR/IR/AR security-impact profile
-independently down the chain. This document becomes the **primary** assignment
-surface, so per-resource `vdr.fedramp.io/*` tags are demoted to
-exceptions/overrides. Provider-managed resources (staging buckets, template
-stores, CDK assets, ...) are matched against a governed catalog and
-**materialized as reviewable medium-confidence rules**, never assumed silently.
-TSW consumes the policy for supported, collected types; **trivy-plugin-vdr does
-not consume `vdr-cloud.yaml` today**.
-
-Name rules support existing `match` globs or explicit `matchRegex` whole-identifier
-regular expressions, with identical matching and validation in the skill and
-TSW. Regex rules require `regex>=2024.11.4` in the script environment; see the
-[schema contract](skills/generate-cloud-vdr-config/references/cloud-config-schema.md#regex-name-rules).
-
-TSW consumes this policy for supported, collected resource types. Discovery also
-covers GCP secrets, KMS keys/rings, identities/key metadata, custom IAM roles,
-synthetic scoped IAM allow bindings, projects, firewalls/networks and VM/container
-release assets. These controls are classified by contents, authority and outage
-dependencies, independently across CR/IR/AR; they do not inherit one family-wide
-score. See the skill's control-asset reference for evidence and matching identity.
-When Cloud Asset Inventory is unavailable, discovery uses the regular service
-APIs for these families and their attached IAM policies. `--no-asset-api` forces
-this path. Disabled or failed queries are excluded with recorded reasons while
-other services continue; exclusions do not prove resource absence.
-
-Cloud discovery also includes GKE clusters/node pools, fleet memberships, Binary
-Authorization policies, subnets and load-balancer proxies. Cluster infrastructure
-uses `vdr-cloud.yaml`; Kubernetes workloads use the ConfigMap skills. The
-[GKE reference](skills/generate-cloud-vdr-config/references/gke-infrastructure.md)
-explains how to review cluster opt-in, project policy rules and unsigned workload
-exceptions without confusing enforcement settings with an asset's SIP.
-
-### `update-cloud-vdr-config` → additive cloud coverage updates
-
-Starts from the operator-selected current local/GitOps/GCS policy, uses current
-gcloud credentials and asks for AWS CLI profiles/accounts/regions. Diffs fresh
-read-only inventory against effective assignments and evaluates only missing
-resources/new scopes. Preserves all existing scores, rules and attestations;
-the offline guard rejects accidental re-scoring, broad new defaults and additions
-that touch already-covered resources. Outputs stay local unless the operator
-separately authorizes publication. Optional prior inventories distinguish new
-identities from older resources missing scoring; partial discovery stays visible.
-
 ### `tag-terraform-vdr-assets` → selective Terraform metadata
 
 Inventories AWS, Azure, and GCP Terraform and allows only asset families
 addressed by the supplied CIS Foundations Benchmarks (for example projects or
-accounts, identities, VMs, databases, buckets, keys, logging, and network
-boundaries). It separately interviews the operator for compositional CR/IR/AR
-decision traces, then adds provider-valid tags or labels only where the pinned
-provider or module supports them. Untaggable IAM and control resources are
-reported as coverage gaps instead of receiving invalid Terraform arguments.
-GCP projects and AWS accounts can optionally carry confirmed Certification
-Class and multi-agency defaults.
+accounts, VMs, databases, buckets, logging, and network boundaries). It
+separately interviews the operator for compositional CR/IR/AR decision traces,
+then adds provider-valid tags or labels only where the pinned provider or
+module supports them. Untaggable IAM and control resources are reported as
+coverage gaps instead of receiving invalid Terraform arguments. GCP projects
+and AWS accounts can optionally carry confirmed Certification Class and
+multi-agency defaults.
 
-## Installation
+### `capture-dataflow-beta` → the `vdr-dataflow` ConfigMap (Beta)
 
-### Claude Code
+> **Beta.** `capture-dataflow-beta` may be deprecated, and its schema should
+> not be treated as a stable interface. Treat its generated artifacts as
+> experimental analysis aids, and do not build automation that depends on its
+> output format.
 
-Add the marketplace and install the plugin:
-
-```
-/plugin marketplace add stackArmor/vdr-agent-skills
-/plugin install trivy-plugin-vdr-skills
-```
-
-Then invoke a skill by name, or describe what you need ("assess the system and
-agency security objectives" or "set up the FedRAMP scoring ConfigMap").
-
-### Antigravity (AGY)
-
-Antigravity supports both project-local auto-discovery and native plugin installation:
-
-- **Project / Workspace Level (Auto-discovery):**
-  When running AGY inside this repository or any project containing the `.agents/skills/` directory, AGY automatically discovers all skills. Confirm discovered skills in chat using `/skills`.
-
-- **Global Installation (Plugin):**
-  Install the plugin natively using the `agy` CLI:
-  ```bash
-  # Install directly from the GitHub repository
-  agy plugin install https://github.com/stackArmor/vdr-agent-skills
-
-  # Or install from a local clone / directory
-  agy plugin install /path/to/vdr-agent-skills
-  ```
-
-  You can also install it interactively in the AGY chat session:
-  ```
-  /plugin install https://github.com/stackArmor/vdr-agent-skills
-  ```
-
-Restart AGY or start a new session, then run `/skills` to verify that the skills are loaded.
-
-### OpenAI Codex (CLI and App)
-
-Codex supports skills via universal agent discovery, local project directories, and global configuration:
-
-- **Project / Workspace Level:**
-  Codex automatically discovers skills adhering to the Agent Skills standard located in `.agents/skills/` (or `.codex/skills/`) at the repository root. When working in this repository or copying `.agents/skills/` into your target project, skills are immediately active.
-
-- **Global Installation:**
-  Copy or symlink the skills into your user-level Codex skills directory:
-  ```bash
-  mkdir -p ~/.codex/skills
-  cp -r .agents/skills/* ~/.codex/skills/
-  ```
-
-- **Interactive Skill Installer (Codex CLI):**
-  In the interactive Codex CLI, type `$` to open the action menu, select **Skill Installer**, and paste the repository URL:
-  ```
-  https://github.com/stackArmor/vdr-agent-skills
-  ```
-
-- **Universal Skills CLI (`npx skills`):**
-  You can also install using the universal skills CLI manager:
-  ```bash
-  npx skills add stackArmor/vdr-agent-skills --agent codex
-  ```
-
-Restart your Codex session after installation so the runtime indexes the new skills.
-
-### Other Agents (Universal Agent Standard)
-
-The repository provides all skills under `.agents/skills/` following the open Agent Skills specification (`<skill>/SKILL.md`). Any agent supporting the `.agents/skills/` directory standard will automatically discover them when operating in the workspace.
-
-## Requirements
-
-| Tool | Notes |
-|------|-------|
-| `kubectl` (authenticated) | For Kubernetes generation/update and dataflow skills; not needed by `generate-security-objectives`. **Read-only RBAC is sufficient** — `get`/`list` on workloads, namespaces, the scoring ConfigMap and (for dataflow) NetworkPolicies, mesh resources, and Secrets. |
-| `gcloud` / `aws` CLIs (authenticated, read-only) | For cloud generation/update skills. Discovery uses `list`/`describe`/`get` and `sts get-caller-identity`; no infrastructure is applied. Policy publication is a separate explicitly authorized action. |
-| `terraform` | Optional for formatting and offline validation of Terraform edits; never used to apply infrastructure. |
-| `python3` (>= 3.8) | Inventory/capture scripts use the standard library. The update skills' offline YAML delta/guard helper needs PyYAML. Cloud `matchRegex` rendering/validation/diff workflows also need `regex>=2024.11.4`; use an existing environment with these dependencies. |
-
-## Security posture
-
-- **Read-only verbs only.** The skills and their scripts run `kubectl get` /
-  `list` exclusively — never `exec`, `apply`, `label`, `patch`, or `delete`.
-- **No Terraform deployment.** The Terraform skill never reads state or plan
-  files and never runs `terraform apply`; it edits only operator-approved HCL
-  and validates the resulting diff.
-- **Secret values never leave the cluster.** Where Secret-declared
-  connections are analyzed, values are reduced to `host:port` endpoints in
-  all outputs; credentials are never written to any artifact.
-- **Artifacts stay local** until the operator applies them. Every generated
-  manifest and label command is written to a local output directory for
-  review; applying is an explicit operator action (`kubectl apply -f` or a
-  GitOps commit).
-- Operator attestations remain distinct from agent inferences. Missing impact
-  detail does not suppress an objectives artifact or ConfigMap: each skill
-  makes a conservative, evidence-backed assessment and exposes its confidence
-  and review needs. HA is mitigation evidence and never lowers the
-  Availability Requirement.
-
-## How the ConfigMaps are consumed
-
-Both ConfigMaps are read in-cluster by
-[trivy-plugin-vdr](https://github.com/stackArmor/trivy-plugin-vdr):
-`vdr-fedramp` drives PAIN scoring and `VDR-TFR-PVR` remediation deadlines
-(Certification Class, agency scope, and security-impact-profile rules). An optional
-`securityRequirementsCeiling` in that ConfigMap—or the corresponding runtime
-flag—caps profile CR/IR/AR values only when recalculating reported PAIN
-scores. Its absence is valid and silent. The beta
-`vdr-dataflow` workflow can supply experimental dataflow evidence for
-internet-reachability determination, but may be changed or deprecated. See
-that repository's README for the scoring model and the ConfigMap schemas.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+The skill is useful for discovering and reviewing data flows and
+interrelationships among workloads, services, ingress paths, policy controls,
+and external dependencies in Kubernetes environments. It builds the cluster's
+dataflow evidence for internet-reachability analysis by working through
+evidence sources in stages — declared **NetworkPolicies**, then **service-mesh
+authorization** resources, then optional **Hubble / mesh flow exports**, then
+declared **env / Secret / ConfigMap** connection analysis. It produces the
+`vdr-dataflow` ConfigMap plus per-namespace Mermaid diagrams for operator
+review. The agent-assisted review also records **broker candidates** — possible
+payload paths through cloud brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes
+alone cannot confirm — each with the workload-identity principal to verify
+against IAM later.
