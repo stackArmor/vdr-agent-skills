@@ -1,0 +1,228 @@
+# Generated from explicit operator attestations on 2026-07-22.
+#
+# Review locally, then apply manually or through the GitOps repository that
+# owns governed security configuration. This file has not been applied.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fedramp-vdr-trivy
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vdr-fedramp
+  namespace: fedramp-vdr-trivy
+data:
+  # FedRAMP Moderate authorization.
+  class: "C"
+  # Single-agency cluster default. More-specific namespace/workload labels may
+  # override this value for any future exception.
+  multiAgency: "false"
+  scoring.yaml: |
+    # A decision trace is <disclosure>.<trusted-change>.<dependency>.
+    # trivy-plugin-vdr currently treats it as an opaque securityImpactProfile key, so every
+    # exact trace referenced by a rule or workload label is compiled here.
+    # The final entries fill vector combinations not exercised by this estate,
+    # ensuring all 27 CR/IR/AR permutations remain representable.
+    securityImpactProfiles:
+      "public-content.bounded-processing.bounded-service":
+        {lens: composite, cr: L, ir: M, ar: M}
+      "regulated-data.authoritative-record.bounded-service":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "regulated-data.bounded-processing.bounded-service":
+        {lens: composite, cr: H, ir: M, ar: M}
+      "regulated-data.bounded-processing.shared-critical-path":
+        {lens: composite, cr: H, ir: M, ar: H}
+      "regulated-data.record-keeping.bounded-service":
+        {lens: composite, cr: H, ir: M, ar: M}
+      "privileged-access.config-control.change-deferred":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "privileged-access.config-control.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "root-secrets.trust-anchor.bounded-service":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "regulated-data.record-keeping.operations-support":
+        {lens: composite, cr: H, ir: M, ar: M}
+      "root-secrets.identity-control.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "regulated-data.authoritative-record.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "control-metadata.config-control.shared-critical-path":
+        {lens: composite, cr: M, ir: H, ar: H}
+      "control-metadata.config-control.change-deferred":
+        {lens: composite, cr: M, ir: H, ar: M}
+      "control-metadata.coordination-state.shared-critical-path":
+        {lens: composite, cr: M, ir: M, ar: H}
+      "regulated-data.authoritative-record.recovery-critical":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "regulated-data.scoped-write.deferrable-work":
+        {lens: composite, cr: H, ir: M, ar: L}
+      "scoped-access.scoped-write.change-deferred":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "root-secrets.trust-anchor.change-deferred":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "root-secrets.identity-control.change-deferred":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "root-secrets.config-control.change-deferred":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "scoped-access.security-enforcement.change-deferred":
+        {lens: composite, cr: M, ir: H, ar: M}
+      "privileged-access.security-enforcement.operations-support":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "privileged-access.security-enforcement.change-deferred":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "privileged-access.security-enforcement.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "control-metadata.security-enforcement.shared-critical-path":
+        {lens: composite, cr: M, ir: H, ar: H}
+      "control-metadata.config-control.shared-degradation":
+        {lens: composite, cr: M, ir: H, ar: M}
+      "security-evidence.record-keeping.operations-support":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "routing-metadata.opaque-forwarding.shared-critical-path":
+        {lens: composite, cr: L, ir: L, ar: H}
+      "routing-metadata.foundation-control.shared-critical-path":
+        {lens: composite, cr: L, ir: H, ar: H}
+      "service-content.bounded-processing.optional-tooling":
+        {lens: composite, cr: M, ir: M, ar: L}
+      "ops-metadata.coordination-state.shared-degradation":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "privileged-access.foundation-control.operations-support":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "privileged-access.identity-control.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "ops-metadata.record-keeping.operations-support":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "security-evidence.security-enforcement.deferrable-work":
+        {lens: composite, cr: M, ir: H, ar: L}
+      "privileged-access.foundation-control.shared-critical-path":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "privileged-access.foundation-control.bounded-service":
+        {lens: composite, cr: H, ir: H, ar: M}
+      "privileged-access.foundation-control.recovery-critical":
+        {lens: composite, cr: H, ir: H, ar: H}
+      "control-metadata.record-keeping.operations-support":
+        {lens: composite, cr: M, ir: M, ar: M}
+      "scoped-access.config-control.change-deferred":
+        {lens: composite, cr: M, ir: H, ar: M}
+
+      # Coverage-only entries: do not assign without an operator attestation.
+      "public-content.advisory-output.deferrable-work":
+        {lens: composite, cr: L, ir: L, ar: L}
+      "public-content.advisory-output.bounded-service":
+        {lens: composite, cr: L, ir: L, ar: M}
+      "public-content.bounded-processing.deferrable-work":
+        {lens: composite, cr: L, ir: M, ar: L}
+      "public-content.bounded-processing.shared-critical-path":
+        {lens: composite, cr: L, ir: M, ar: H}
+      "public-content.authoritative-record.deferrable-work":
+        {lens: composite, cr: L, ir: H, ar: L}
+      "public-content.authoritative-record.bounded-service":
+        {lens: composite, cr: L, ir: H, ar: M}
+      "service-content.advisory-output.deferrable-work":
+        {lens: composite, cr: M, ir: L, ar: L}
+      "service-content.advisory-output.bounded-service":
+        {lens: composite, cr: M, ir: L, ar: M}
+      "service-content.advisory-output.shared-critical-path":
+        {lens: composite, cr: M, ir: L, ar: H}
+      "regulated-data.advisory-output.deferrable-work":
+        {lens: composite, cr: H, ir: L, ar: L}
+      "regulated-data.advisory-output.bounded-service":
+        {lens: composite, cr: H, ir: L, ar: M}
+      "regulated-data.advisory-output.shared-critical-path":
+        {lens: composite, cr: H, ir: L, ar: H}
+      "regulated-data.authoritative-record.deferrable-work":
+        {lens: composite, cr: H, ir: H, ar: L}
+
+    # Attested application and managed-component rules only. There is
+    # deliberately no broad system-namespace or workload-kind fallback:
+    # unfamiliar future components remain loudly unclassified (H/H/H).
+    nameRules:
+      # Velocity systems of record, queues, and recovery paths.
+      - {namespace: velocity, match: postgres, securityImpactProfile: regulated-data.authoritative-record.shared-critical-path}
+      - {namespace: velocity, match: kafka, securityImpactProfile: regulated-data.authoritative-record.shared-critical-path}
+      - {namespace: velocity, match: barman-backup, securityImpactProfile: regulated-data.authoritative-record.recovery-critical}
+      - {namespace: velocity, match: titan-db-utilities, securityImpactProfile: privileged-access.config-control.change-deferred}
+
+      # Velocity coordination, configuration, and identity control.
+      - {namespace: velocity, match: zookeeper, securityImpactProfile: control-metadata.coordination-state.shared-critical-path}
+      - {namespace: velocity, match: schema-registry, securityImpactProfile: control-metadata.config-control.shared-critical-path}
+      - {namespace: velocity, match: tenant-admin-service, securityImpactProfile: privileged-access.config-control.shared-critical-path}
+      - {namespace: velocity, match: gatekeeper, securityImpactProfile: root-secrets.identity-control.shared-critical-path}
+
+      # Velocity application and reporting services.
+      - {namespace: velocity, match: velocity-alm, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: mustang, securityImpactProfile: public-content.advisory-output.deferrable-work}
+      - {namespace: velocity, match: devon, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: jbadger, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: sparrow, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: cashier, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: oracle, securityImpactProfile: regulated-data.bounded-processing.shared-critical-path}
+      - {namespace: velocity, match: verdict, securityImpactProfile: regulated-data.scoped-write.deferrable-work}
+      - {namespace: velocity, match: siembridge, securityImpactProfile: regulated-data.record-keeping.operations-support}
+
+      # Stable Helm hook and one-shot Job names. These are intentionally
+      # specific because Jobs in this estate carry materially different
+      # secret, migration, and configuration authority.
+      - {namespace: velocity, match: kafka-generate-secrets, securityImpactProfile: root-secrets.trust-anchor.change-deferred}
+      - {namespace: velocity, match: postgres-generate-secrets, securityImpactProfile: root-secrets.trust-anchor.change-deferred}
+      - {namespace: velocity, match: postgres-admin-migrations, securityImpactProfile: privileged-access.config-control.change-deferred}
+      - {namespace: velocity, match: oracle-refresh-trigger, securityImpactProfile: privileged-access.config-control.change-deferred}
+      - {namespace: velocity, match: bootstrap-zookeeper, securityImpactProfile: control-metadata.config-control.change-deferred}
+
+      # Cluster networking and policy enforcement.
+      - {namespace: kube-system, match: calico-node, securityImpactProfile: privileged-access.security-enforcement.shared-critical-path}
+      - {namespace: kube-system, match: calico-typha, securityImpactProfile: control-metadata.security-enforcement.shared-critical-path}
+      - {namespace: kube-system, match: "calico-*-autoscaler", securityImpactProfile: control-metadata.config-control.shared-degradation}
+      - {namespace: kube-system, match: ip-masq-agent, securityImpactProfile: privileged-access.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: kube-proxy, securityImpactProfile: privileged-access.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: "kube-proxy-gke-*", securityImpactProfile: privileged-access.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: netd, securityImpactProfile: privileged-access.foundation-control.shared-critical-path}
+
+      # API connectivity, discovery, and their scaling controllers.
+      - {namespace: kube-system, match: konnectivity-agent, securityImpactProfile: routing-metadata.opaque-forwarding.shared-critical-path}
+      - {namespace: kube-system, match: konnectivity-agent-autoscaler, securityImpactProfile: control-metadata.config-control.shared-degradation}
+      - {namespace: kube-system, match: kube-dns, securityImpactProfile: routing-metadata.foundation-control.shared-critical-path}
+      - {namespace: kube-system, match: kube-dns-autoscaler, securityImpactProfile: control-metadata.config-control.shared-degradation}
+
+      # Credential delivery and node metadata proxies.
+      - {namespace: kube-system, match: gke-metadata-server, securityImpactProfile: privileged-access.identity-control.shared-critical-path}
+      - {namespace: kube-system, match: "metadata-proxy*", securityImpactProfile: privileged-access.identity-control.shared-critical-path}
+
+      # Persistent-disk attachment and mount path; failure blocks recovery.
+      - {namespace: kube-system, match: "pdcsi-node*", securityImpactProfile: privileged-access.foundation-control.recovery-critical}
+
+      # Node/runtime helpers with privileged host access.
+      - {namespace: kube-system, match: container-watcher, securityImpactProfile: privileged-access.security-enforcement.operations-support}
+      - {namespace: kube-system, match: efficiency-daemon, securityImpactProfile: privileged-access.foundation-control.operations-support}
+      - {namespace: kube-system, match: image-package-extractor, securityImpactProfile: privileged-access.foundation-control.operations-support}
+      - {namespace: kube-system, match: maintenance-handler, securityImpactProfile: privileged-access.foundation-control.bounded-service}
+      - {namespace: kube-system, match: nccl-fastsocket-installer, securityImpactProfile: privileged-access.foundation-control.bounded-service}
+      - {namespace: kube-system, match: "nvidia-gpu-device-plugin*", securityImpactProfile: privileged-access.foundation-control.bounded-service}
+      - {namespace: kube-system, match: runsc-metric-server, securityImpactProfile: privileged-access.foundation-control.operations-support}
+      - {namespace: kube-system, match: tpu-device-plugin, securityImpactProfile: privileged-access.foundation-control.bounded-service}
+
+      # Logs may contain identifiers or payload fragments; metrics do not.
+      - {namespace: kube-system, match: "fluentbit-gke*", securityImpactProfile: regulated-data.record-keeping.operations-support}
+      - {namespace: kube-system, match: "gke-metrics-agent*", securityImpactProfile: ops-metadata.record-keeping.operations-support}
+      - {namespace: kube-system, match: event-exporter-gke, securityImpactProfile: security-evidence.record-keeping.operations-support}
+      - {namespace: kube-system, match: "metrics-server*", securityImpactProfile: ops-metadata.coordination-state.shared-degradation}
+      - {namespace: kube-system, match: "image-package-extractor-cleanup*", securityImpactProfile: security-evidence.security-enforcement.deferrable-work}
+
+      # Default backend only handles unmatched traffic after provider TLS termination.
+      - {namespace: kube-system, match: l7-default-backend, securityImpactProfile: service-content.bounded-processing.optional-tooling}
+
+      # Other provider-managed namespaces.
+      - {namespace: gke-managed-cim, match: kube-state-metrics, securityImpactProfile: control-metadata.record-keeping.operations-support}
+      - {namespace: gke-managed-networking-dra-driver, match: networking-dra-driver, securityImpactProfile: privileged-access.foundation-control.bounded-service}
+      - {namespace: gke-managed-system, match: dcgm-exporter, securityImpactProfile: privileged-access.foundation-control.operations-support}
+      - {namespace: gmp-system, match: gmp-operator, securityImpactProfile: scoped-access.config-control.change-deferred}
+      - {namespace: gmp-system, match: collector, securityImpactProfile: ops-metadata.record-keeping.operations-support}
+      - {namespace: gmp-system, match: rule-evaluator, securityImpactProfile: security-evidence.record-keeping.operations-support}
+      - {namespace: gmp-system, match: alertmanager, securityImpactProfile: security-evidence.record-keeping.operations-support}
+
+    namespaceRules:
+      # Secret synchronization is an identity-control and trust-material path.
+      - {match: external-secrets, securityImpactProfile: root-secrets.identity-control.shared-critical-path}
+      # Endpoint detection and response agents perform privileged runtime security enforcement.
+      - {match: edr-system, securityImpactProfile: privileged-access.security-enforcement.operations-support}

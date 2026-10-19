@@ -1,0 +1,84 @@
+# Central cloud-resource scoring assignment surface for trivy-plugin-vdr.
+# PROPOSED INTEGRATION CONTRACT: no current scanner consumes this document.
+apiVersion: vdr.fedramp.io/v1alpha1
+kind: CloudResourceScoringConfig
+defaults:
+  # confidence: high | operator-confirmed FedRAMP Moderate authorization
+  class: "C"
+  # confidence: high | operator-attested: project hosts many federal agency tenants; shared assets are multi-tenant; single-tenant assets carry rule-level false
+  multiAgency: "true"
+scopes:
+  - provider: gcp
+    project: acme-horizon-prod
+    # confidence: high | operator-confirmed FedRAMP Moderate authorization
+    class: "C"
+    # confidence: high | fail-closed umbrella for shared/multi-tenant and future assets; operator attested per-asset tenancy with single-tenant exceptions below
+    multiAgency: "true"
+    nameRules:
+      # builtin-pattern: gcp-cloudfunctions-staging
+      # confidence: medium | provider-created Cloud Functions source staging buckets; deploy-time only, overwritten on update
+      # manual-review: attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material
+      # manual-review: confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)
+      - {type: storage.googleapis.com/Bucket, match: "gcf-v2-sources-*", securityImpactProfile: service-content.disposable-state.deferrable-work}
+      # builtin-pattern: gcp-managed-by-label
+      # confidence: medium | goog-managed-by=cloudfunctions upload staging bucket; transient deployment artifacts
+      # manual-review: attest CR down with a direct vector only after verifying staged contents embed no credentials or sensitive material
+      # manual-review: confirm nothing re-consumes these artifacts after deployment (re-consumption raises IR)
+      - {type: storage.googleapis.com/Bucket, match: "gcf-v2-uploads-*", securityImpactProfile: service-content.disposable-state.deferrable-work}
+      # confidence: high | operator-attested per-tenant pgBadger query-log buckets (information-impact-level=direct-impact-data); logs can embed federal record content; single tenant per bucket
+      - {type: storage.googleapis.com/Bucket, match: "acme-horizon-prod-pgbadger-*", securityImpactProfile: federal-records.record-keeping.operations-support, multiAgency: "false"}
+      # confidence: high | operator-attested SQL export bucket holds tenant database dumps (direct-impact-data); shared across tenants so scope multiAgency true applies
+      - {type: storage.googleapis.com/Bucket, match: horizon-prod-sql-exports, securityImpactProfile: federal-records.record-keeping.operations-support}
+      # confidence: medium | Horizon install-file storage labeled low-and-limited-impact-data; replaceable software artifacts
+      # manual-review: verify install media embed no credentials or license-restricted material that would raise CR
+      - {type: storage.googleapis.com/Bucket, match: horizon-prod-cmn, securityImpactProfile: service-content.disposable-state.deferrable-work}
+      # confidence: medium | Pub/Sub message spill bucket labeled indirect-impact-data; transient coordination payloads
+      # manual-review: verify message payloads exclude direct-impact tenant data (would raise CR)
+      - {type: storage.googleapis.com/Bucket, match: acme-horizon-prod-100000000001-pubsub-messages, securityImpactProfile: service-content.coordination-state.bounded-service}
+      # confidence: medium | Ansible variable storage labeled indirect-impact-data; variables drive fleet configuration so corruption alters trusted configuration
+      # manual-review: verify stored vars exclude secrets/credentials (presence raises CR to H)
+      # manual-review: confirm ansible vars are authoritative for fleet configuration (IR:H assumption)
+      - {type: storage.googleapis.com/Bucket, match: acme-horizon-prod-ansible-vars-bucket, securityImpactProfile: control-metadata.config-control.operations-support}
+      # confidence: medium | untagged bucket; name indicates outbound maintenance notices (advisory content)
+      # manual-review: confirm bucket holds only outbound advisory notices, no tenant data
+      - {type: storage.googleapis.com/Bucket, match: acme-horizon-prod-maintenance-notifications, securityImpactProfile: ops-metadata.advisory-output.deferrable-work}
+      # confidence: high | operator-attested single-tenant Horizon PPM databases holding federal agency records; authoritative store; outage attested serious-but-bounded; dev/test/sandbox attested production-equivalent
+      - {type: sqladmin.googleapis.com/Instance, match: "horizon-*", securityImpactProfile: federal-records.authoritative-record.bounded-service, multiAgency: "false"}
+      # confidence: medium | Cloud Armor WAF log dataset; security telemetry, non-authoritative record
+      # manual-review: confirm dataset ingests only WAF/security telemetry, not payload fragments
+      - {type: bigquery.googleapis.com/Dataset, match: cloud_armor_logs, securityImpactProfile: security-evidence.record-keeping.operations-support}
+      # confidence: high | operator-attested multi-agency shared SFTP transfer nodes serving multiple agency tenants; operator-attested NIRV — tcp:22 admits only per-tenant agency source CIDRs enforced on the load-balancer backend firewall
+      # manual-review: re-attest whenever a tenant allowlist widens or a new allow-prod-*-sftp-ingress rule is added
+      # manual-review: WAF, L7, or DDoS protections would not justify this attestation; only the source-IP allowlist does
+      - {type: compute.googleapis.com/Instance, match: "sftp-*", multiAgency: "true",
+         internetReachable: "false",
+         internetReachableJustification: "Port 22 on the sftp-* nodes is reachable
+           from the internet only through the sftp-nlb external passthrough load
+           balancer (VIP 203.0.113.10). The backend firewall admits tcp:22 to tag
+           `sftp` from 24 distinct operator-maintained agency source CIDRs across six
+           per-tenant rules (allow-prod-agency-a, -agency-b, -agency-c, -agency-d, -agency-e and
+           -agency-f-sftp-ingress), plus Google health-check ranges via
+           horizon-allow-lb-hc-sftp. The instances carry no external IP address, and
+           no 0.0.0.0/0 ingress rule reaches tcp:22 in the instance effective
+           firewall, which has no hierarchical policies applied. Verified against
+           project acme-horizon-prod on 2026-08-31."}
+      # confidence: medium | Pub/Sub topic for infrastructure alerts; non-sensitive operational notifications
+      # manual-review: verify alert payloads contain no sensitive tenant data
+      - {type: pubsub.googleapis.com/Topic, match: acme-horizon-prod-alerts, securityImpactProfile: ops-metadata.advisory-output.operations-support}
+      # confidence: medium | Pub/Sub trigger topics for automated backup and maintenance jobs
+      # manual-review: verify trigger messages carry only orchestration signals
+      - {type: pubsub.googleapis.com/Topic, match: "*-trigger", securityImpactProfile: control-metadata.coordination-state.operations-support}
+      # confidence: medium | Eventarc triggers and transient Pub/Sub subscriptions for cloud functions
+      # manual-review: verify subscription payloads carry only event metadata
+      - {type: pubsub.googleapis.com/Subscription, match: "*", securityImpactProfile: control-metadata.coordination-state.operations-support}
+      # confidence: medium | Serverless Cloud Run services for automated maintenance and backups
+      # manual-review: verify execution role and outputs are restricted to backup destinations
+      - {type: run.googleapis.com/Service, match: "*", securityImpactProfile: control-metadata.bounded-processing.operations-support}
+      # confidence: medium | Cloud Functions for maintenance and backup tasks
+      # manual-review: verify execution role and outputs are restricted
+      - {type: cloudfunctions.googleapis.com/Function, match: "*", securityImpactProfile: control-metadata.bounded-processing.operations-support}
+    tagRules:
+      # confidence: high | operator-attested Horizon application/reporting/job servers processing federal agency records (direct-impact-data); processing tier, not authoritative store; outage bounded; env parity attested
+      - {type: compute.googleapis.com/Instance, matchTags: {diagram-label: "horizon-server"}, securityImpactProfile: federal-records.bounded-processing.bounded-service}
+      # confidence: high | operator-attested single-tenant VMs; customer tag identifies the one agency tenant per instance
+      - {type: compute.googleapis.com/Instance, matchTags: {customer: "*"}, multiAgency: "false"}
