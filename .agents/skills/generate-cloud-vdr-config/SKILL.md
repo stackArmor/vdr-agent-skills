@@ -74,8 +74,9 @@ compositional decision trace with exactly three segments
 (`<disclosure>.<trusted-change>.<dependency>`), or a named archetype from the
 optional catalog. Prefer a compositional trace. Provider label encodings (GCP
 `vdr_fedramp_io_*` keys and `__` trace separators) apply to actual cloud labels and are decoded
-at discovery. Azure dotted tag keys remain metadata / explicit `matchTags`
-evidence unless the consumer accepts them as overrides; see the Azure reference.
+at discovery. Azure canonical, underscore and dotted aliases are decoded in
+consumer precedence order; confirm deployed dotted-tag support as described
+in the Azure reference before treating those assignments as effective in TSW.
 Provider encodings never appear in the YAML `securityImpactProfile` field.
 
 Read `../generate-k8s-vdr-configmap/references/archetype-guide.md` completely before

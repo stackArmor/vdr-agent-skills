@@ -30,8 +30,17 @@ again before returning. A change invalidates the run; reconfirm before retrying.
 Read-only parent projections enumerate VNet subnets, load-balancer rules and
 application-gateway listeners, backend pools, and probes. SQL database and
 Service Bus queue/topic/subscription children use explicit service list calls.
-VM NIC/subnet references provide known network attachments. No Resource Graph
-extension is needed.
+Network attachments follow TSW's Azure normalizers: VM NICs, security-group
+subnet membership (ASGs via NIC IP configurations), routes/NAT gateways, VPN
+and firewall IP configurations, managed SQL/delegated database subnets, and
+Container Apps managed-environment infrastructure subnets. VNet subnet
+references supply reverse NAT attachments. No Resource Graph extension is needed.
+
+Subnets and load-balancer/application-gateway children inherit parent tags,
+including an empty parent tag set. SQL and messaging children keep their own
+tags. Listener/rule attachments use their selected frontend (or the application
+gateway's dedicated subnet). Backend pools expose their primary VNet only;
+health probes do not inherit the parent's network/subnet attachment.
 
 The supported assignment families follow TSW's Azure cloud-scoring types:
 
@@ -75,10 +84,18 @@ endpoints, firewall allowlists, or nearby resources. Storage accounts are not
 network-attached assignment targets; their network ACLs do not make a
 `networkRules` selector valid.
 
-Provider-native dotted VDR tags remain available as metadata evidence and
-`matchTags` selectors. Do not treat an encoded tag as a runtime override unless
-the deployed consumer accepts that exact key. Materialize an operator-reviewed
-typed rule where needed; keep the profile in canonical form in the YAML.
+Azure VDR overrides are decoded in TSW precedence order: canonical slash key,
+legacy `vdr_fedramp_io_*` key, then provider-native dotted key (for example,
+`vdr.fedramp.io.security-impact-profile`). Unlike GCP labels, Azure values retain
+canonical dot separators in compositional traces. Raw tags remain available for
+explicit `matchTags` selectors.
+
+**Consumer compatibility:** regex name rules remain supported by these skills.
+TSW requires the [regex/dotted-tag consumer fix](https://github.com/stackArmor/tsw/pull/1197) before accepting
+`matchRegex` or honoring Azure dotted overrides. Confirm the deployed TSW build;
+until it includes that fix, use operator-reviewed typed glob/tag rules to
+materialize dotted-tag assignments. Do not silently drop a regex from an
+existing policy or claim an unsupported consumer can replay it.
 
 ## Review and publication
 

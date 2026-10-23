@@ -148,6 +148,13 @@ Government are supported. Azure scopes use `subscription`, and the same
 and Container Apps resource families. For coverage maintenance, use
 `update-cloud-vdr-config`.
 
+Azure discovery replays TSW's inherited child tags and explicit network
+attachments, including delegated database subnets and Container Apps environments.
+Azure underscore/dotted VDR encodings are decoded with canonical-key precedence.
+Regex remains supported; TSW must include
+[the regex/dotted-tag consumer fix](https://github.com/stackArmor/tsw/pull/1197)
+for those features to be effective. See the compatibility note in the Azure reference.
+
 See [Azure inventory and identity rules](skills/generate-cloud-vdr-config/references/azure-inventory.md)
 and the [fictional Azure policy](skills/generate-cloud-vdr-config/assets/vdr-cloud.azure.example.yaml).
 The helper never changes cloud/account selection, installs extensions, or reads

@@ -122,6 +122,15 @@ def decode_vdr_tags(provider, tags):
         for key, value in tags.items():
             if key.startswith("vdr.fedramp.io/"):
                 decoded[key] = value
+    if provider == "azure":
+        aliases = {**GCP_KEY_ALIASES,
+                   "vdr_fedramp_io_internet_reachable": "vdr.fedramp.io/internet-reachable"}
+        for alias, canonical in aliases.items():
+            # Match TSW: canonical > legacy underscore > Azure dotted encoding.
+            for key in (canonical, alias, canonical.replace("/", ".")):
+                if key in tags:
+                    decoded[canonical] = str(tags[key]).strip()
+                    break
     return decoded
 
 

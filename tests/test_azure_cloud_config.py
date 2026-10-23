@@ -1,5 +1,5 @@
-import copy
 import contextlib
+import copy
 import importlib.util
 import io
 import json
@@ -126,6 +126,114 @@ class AzureInventoryTests(unittest.TestCase):
         self.assertEqual(by_type[listener["type"]]["network"], vnet["id"].lower())
         self.assertNotIn("DO_NOT_RECORD", json.dumps(scope))
         self.assertIn("microsoft.network/networkinterfaces", scope["provenance"]["excludedResourceTypes"])
+
+    def test_network_children_inherit_parent_tags_even_when_child_tags_differ(self):
+        for kind, field, child_kind in (
+            ("Microsoft.Network/virtualNetworks", "subnets", "Microsoft.Network/virtualNetworks/subnets"),
+            ("Microsoft.Network/loadBalancers", "probes", "Microsoft.Network/loadBalancers/probes"),
+            ("Microsoft.Network/applicationGateways", "httpListeners", "Microsoft.Network/applicationGateways/httpListeners"),
+        ):
+            for tags in ({"role": "critical", "vdr_fedramp_io_class": "D"}, {}):
+                parent = row(kind, "parent", tags=tags)
+                child = row(child_kind, "parent/child", tags={"role": "wrong"})
+                runner = AzureRunner([parent, child], {parent["id"]: {"properties": {field: [child]}}})
+                resources = self.inventory.inventory_azure(SUB, [], runner)["resources"]
+                found = next(r for r in resources if r["type"] == child_kind)
+                self.assertEqual(found["tags"], tags)
+                self.assertEqual(found["vdrTags"].get("vdr.fedramp.io/class"), "D" if tags else None)
+
+    def test_database_container_and_gateway_network_attachments(self):
+        subnet = rid("Microsoft.Network/virtualNetworks/subnets", "vnet/apps")
+        environment = rid("Microsoft.App/managedEnvironments", "environment")
+        cases = {
+            "Microsoft.Sql/managedInstances": {"subnetId": subnet},
+            "Microsoft.DBforPostgreSQL/flexibleServers": {"network": {"delegatedSubnetResourceId": subnet}},
+            "Microsoft.DBforMySQL/flexibleServers": {"network": {"delegatedSubnetResourceId": subnet}},
+            "Microsoft.Network/networkSecurityGroups": {"subnets": [{"id": subnet}]},
+            "Microsoft.Network/routeTables": {"subnets": [{"id": subnet}]},
+            "Microsoft.Network/natGateways": {"subnets": [{"id": subnet}]},
+            "Microsoft.Network/virtualNetworkGateways": {"ipConfigurations": [{"properties": {"subnet": {"id": subnet}}}]},
+            "Microsoft.Network/azureFirewalls": {"managementIPConfiguration": {"subnet": {"id": subnet}}},
+            "Microsoft.App/containerApps": {"environmentId": environment, "configuration": {"secrets": ["DO_NOT_RECORD"]}},
+            "Microsoft.App/jobs": {"managedEnvironmentId": environment, "template": {"containers": ["DO_NOT_RECORD"]}},
+        }
+        for kind, properties in cases.items():
+            with self.subTest(kind=kind):
+                item = row(kind, "resource")
+                runner = AzureRunner([item], {item["id"]: {"properties": properties},
+                    environment: {"properties": {"vnetConfiguration": {"infrastructureSubnetId": subnet}}}})
+                scope = self.inventory.inventory_azure(SUB, [], runner)
+                self.assertEqual(scope["resources"][0]["subnet"], subnet.lower())
+                self.assertEqual(scope["resources"][0]["network"], subnet.lower().rsplit("/subnets/", 1)[0])
+                self.assertNotIn("DO_NOT_RECORD", json.dumps(scope))
+
+    def test_application_security_group_membership_and_nat_reverse_subnets(self):
+        vnet = row("Microsoft.Network/virtualNetworks", "vnet")
+        subnet = row("Microsoft.Network/virtualNetworks/subnets", "vnet/apps")
+        nat = row("Microsoft.Network/natGateways", "nat")
+        asg = row("Microsoft.Network/applicationSecurityGroups", "asg")
+        nic = row("Microsoft.Network/networkInterfaces", "nic")
+        details = {
+            vnet["id"]: {"properties": {"subnets": [{**subnet, "properties": {"natGateway": {"id": nat["id"]}}}]}},
+            nat["id"]: {"properties": {}},
+            nic["id"]: {"properties": {"ipConfigurations": [{"properties": {
+                "subnet": {"id": subnet["id"]}, "applicationSecurityGroups": [{"id": asg["id"]}]}}]}},
+        }
+        scope = self.inventory.inventory_azure(SUB, [], AzureRunner([nat, asg, nic, vnet], details))
+        by_type = {r["type"]: r for r in scope["resources"]}
+        for item in (nat, asg):
+            self.assertEqual(by_type[item["type"]]["subnet"], subnet["id"].lower())
+        self.assertIsNone(by_type[subnet["type"]]["subnet"])
+
+    def test_lb_children_have_only_their_actual_network_relationships(self):
+        lb = row("Microsoft.Network/loadBalancers", "lb")
+        subnet_a = rid("Microsoft.Network/virtualNetworks/subnets", "a/apps")
+        subnet_b = rid("Microsoft.Network/virtualNetworks/subnets", "b/apps")
+        front_a, front_b = lb["id"] + "/frontendIPConfigurations/a", lb["id"] + "/frontendIPConfigurations/b"
+        rule = row("Microsoft.Network/loadBalancers/loadBalancingRules", "lb/rule",
+                   properties={"frontendIPConfiguration": {"id": front_b}})
+        probe = row("Microsoft.Network/loadBalancers/probes", "lb/probe")
+        pool = row("Microsoft.Network/loadBalancers/backendAddressPools", "lb/pool",
+                   properties={"virtualNetwork": {"id": subnet_b.rsplit("/subnets/", 1)[0]}})
+        runner = AzureRunner([lb], {lb["id"]: {"properties": {
+            "frontendIPConfigurations": [{"id": front_a, "properties": {"subnet": {"id": subnet_a}}},
+                                          {"id": front_b, "properties": {"subnet": {"id": subnet_b}}}],
+            "loadBalancingRules": [rule], "probes": [probe], "backendAddressPools": [pool]}}})
+        by_type = {r["type"]: r for r in self.inventory.inventory_azure(SUB, [], runner)["resources"]}
+        self.assertEqual(by_type[rule["type"]]["subnets"], [subnet_b.lower()])
+        self.assertEqual(by_type[probe["type"]]["networks"], [])
+        self.assertEqual(by_type[pool["type"]]["networks"], [subnet_b.lower().rsplit("/subnets/", 1)[0]])
+        self.assertEqual(by_type[pool["type"]]["subnets"], [])
+
+    def test_backend_pool_nic_attachment_uses_only_primary_network(self):
+        lb = row("Microsoft.Network/loadBalancers", "lb")
+        pool = row("Microsoft.Network/loadBalancers/backendAddressPools", "lb/pool")
+        nic = row("Microsoft.Network/networkInterfaces", "nic")
+        ipc = nic["id"] + "/ipConfigurations/ip"
+        subnet = rid("Microsoft.Network/virtualNetworks/subnets", "vnet/apps")
+        pool["properties"] = {"backendIPConfigurations": [{"id": ipc}]}
+        runner = AzureRunner([lb, nic], {
+            lb["id"]: {"properties": {"backendAddressPools": [pool]}},
+            nic["id"]: {"properties": {"ipConfigurations": [{"id": ipc, "properties": {"subnet": {"id": subnet}}}]}},
+        })
+        found = next(r for r in self.inventory.inventory_azure(SUB, [], runner)["resources"] if r["type"] == pool["type"])
+        self.assertEqual(found["networks"], [subnet.lower().rsplit("/subnets/", 1)[0]])
+        self.assertEqual(found["subnets"], [])
+
+    def test_azure_override_aliases_preserve_tsw_priority_and_trace_separators(self):
+        aliases = {
+            "security-impact-profile": ("security_impact_profile", "federal-records.authoritative-record.mission-essential"),
+            "class": ("class", "D"), "multi-agency": ("multi_agency", "true"),
+            "internet-reachable": ("internet_reachable", "false"),
+        }
+        for suffix, (underscored, value) in aliases.items():
+            canonical = "vdr.fedramp.io/" + suffix
+            underscore = "vdr_fedramp_io_" + underscored
+            dotted = canonical.replace("/", ".")
+            for key in (canonical, underscore, dotted):
+                self.assertEqual(self.inventory.decode_vdr_tags("azure", {key: value}), {canonical: value})
+            self.assertEqual(self.inventory.decode_vdr_tags("azure", {canonical: value, underscore: "wrong", dotted: "wrong"})[canonical], value)
+            self.assertEqual(self.inventory.decode_vdr_tags("azure", {underscore: value, dotted: "wrong"})[canonical], value)
 
     def test_sql_and_service_bus_children_are_not_silently_omitted(self):
         server = row("Microsoft.Sql/servers", "sql")
