@@ -1,6 +1,6 @@
 ---
 name: update-cloud-vdr-config
-description: Refresh coverage of an existing vdr-cloud.yaml using current gcloud credentials and operator-selected AWS CLI profiles. Diff read-only inventory against existing assignments, evaluate only missing resources or new scopes, preserve existing scores and attestations, and produce an additive candidate and preservation report. Not a full reassessment or automatic publication workflow.
+description: Refresh coverage of an existing vdr-cloud.yaml using current gcloud credentials, operator-selected AWS CLI profiles, and Azure CLI subscriptions. Diff read-only inventory against existing assignments, evaluate only missing resources or new scopes, preserve existing scores and attestations, and produce an additive candidate and preservation report. Not a full reassessment or automatic publication workflow.
 ---
 
 # Update cloud VDR coverage
@@ -39,13 +39,22 @@ accounts/regions. Profile names belong in local provenance, not policy rules.
 Existing AWS scopes without a confirmed profile remain unchanged and are
 reported as not inventoried, never removed.
 
+Ask whether Azure subscriptions are in scope. Use the existing Azure CLI login
+and Commercial or Government cloud. Read `az cloud show` and `az account show
+--subscription <uuid>`, show and confirm each subscription/tenant/principal/cloud,
+and pin `--subscription` on every query. Never run login, account/cloud set,
+install extensions, or read credentials. Azure scope keys are `azure/<uuid>`
+with lowercase UUIDs; existing unselected subscriptions remain unchanged and
+are reported as not inventoried. Read the generator's
+`references/azure-inventory.md` for discovery and identity contracts.
+
 ## Discover and diff before evaluating
 
 Read the sibling `../generate-cloud-vdr-config/SKILL.md` for discovery and schema
 details, but use this skill's incremental boundaries instead of its full
 interview/generation workflow. Run its `scripts/inventory_cloud_resources.py`
 once per confirmed scope, writing only this run's exact outputs. Pass explicit
-GCP projects or AWS profiles/regions. Merge an explicit list of those files;
+GCP projects, AWS profiles/regions, or Azure subscriptions. Merge an explicit list of those files;
 never merge a glob containing prior runs. Keep failed/degraded scope warnings.
 If Cloud Asset is unavailable, the generator uses regular service APIs for
 resources and attached IAM policies; `--no-asset-api` forces that path. Disabled
@@ -66,8 +75,9 @@ python3 <skill-dir>/scripts/coverage_diff.py --mode cloud \
 
 Optionally supply `--previous-inventory <trusted-prior-snapshot>` to identify
 new identities. Without it, call findings coverage gaps, not proven newly
-created resources. Identity includes project/account, type and primary
-identifier; use full KMS/key/role paths and scoped IAM-binding identities.
+created resources. Identity includes project/account/subscription, type and primary
+identifier; Azure coverage retains full normalized ARM IDs, while name rules
+match the separate short resource name. For other providers, use full KMS/key/role paths and scoped IAM-binding identities.
 GKE clusters, node pools, fleet memberships, Binary Authorization policies,
 subnets and load-balancer proxies are cloud resource types. Read the generator's
 `references/gke-infrastructure.md` for their identifiers and policy evidence.
@@ -112,7 +122,7 @@ New decisions get evidence, confidence and concrete manual-review notes.
 Preserve baseline text/comments, rule order, named catalog, defaults, existing
 Class/multi-agency values, ceilings and reachability attestations. Append narrow
 typed name rules or verified-coherent tag rules only for gaps, and append new
-project/account scopes only when confirmed. Never add broad SIP defaults to
+project/account/subscription scopes only when confirmed. Never add broad SIP defaults to
 hide gaps. Do not add reachability overrides in this coverage-only workflow.
 New name rules may use `matchRegex` instead of glob `match`; follow the
 generator's whole-identifier regex contract and inspect every current match.

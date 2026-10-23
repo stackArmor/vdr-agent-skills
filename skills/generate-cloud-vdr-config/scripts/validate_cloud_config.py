@@ -32,6 +32,7 @@ import importlib.util
 import json
 import re
 import sys
+import uuid
 from pathlib import Path
 
 FAMILIES = ("nameRules", "tagRules", "networkRules", "typeRules")
@@ -54,6 +55,7 @@ GLOBAL_TYPES = (
     "compute.googleapis.com/TargetGrpcProxy",
     "storage.googleapis.com/Bucket",
     "AWS::S3::Bucket",
+    "Microsoft.Storage/storageAccounts",
     "bigquery.googleapis.com/Dataset",
     "secretmanager.googleapis.com/Secret",
     "cloudkms.googleapis.com/CryptoKey",
@@ -172,7 +174,7 @@ def rule_matches(rule, res, family):
     if family == "nameRules":
         if selector_errors(rule, family):
             return False
-        if not _name_matching.name_matches(rule, res["identifier"]):
+        if not _name_matching.name_matches(rule, res.get("name", res["identifier"])):
             return False
     if rule.get("matchTags"):
         tags = res.get("tags") or {}
@@ -180,13 +182,17 @@ def rule_matches(rule, res, family):
                    for key, val in rule["matchTags"].items()):
             return False
     if family == "networkRules":
-        if not res.get("network"):
+        def matches(field, pattern):
+            values = set(res.get(field + "s") or [])
+            if res.get(field):
+                values.add(res[field])
+            if res.get("provider") == "azure":
+                values.update(value.rsplit("/", 1)[-1] for value in list(values))
+                return any(fnmatch.fnmatchcase(value.lower(), pattern.lower()) for value in values)
+            return any(fnmatch.fnmatchcase(value, pattern) for value in values)
+        if not rule.get("network") or not matches("network", rule["network"]):
             return False
-        if not rule.get("network") or not fnmatch.fnmatchcase(res["network"],
-                                                              rule["network"]):
-            return False
-        if rule.get("subnet") and not fnmatch.fnmatchcase(res.get("subnet") or "",
-                                                          rule["subnet"]):
+        if rule.get("subnet") and not matches("subnet", rule["subnet"]):
             return False
     if family == "tagRules" and not rule.get("matchTags"):
         return False
@@ -281,7 +287,12 @@ def resolve(res, scope_plan, defaults, resources=()):
 def scope_key(scope):
     """Canonical ``provider/identity`` key for a plan or inventory scope."""
     provider = scope.get("provider")
-    identity = scope.get("account") if provider == "aws" else scope.get("project")
+    field = {"gcp": "project", "aws": "account", "azure": "subscription"}.get(provider)
+    identity = scope.get(field) if field else None
+    if not isinstance(identity, str) or not identity.strip():
+        raise ValueError("invalid cloud scope identity: provider and its project/account/subscription are required")
+    if provider == "azure":
+        identity = str(uuid.UUID(identity.strip()))
     return "%s/%s" % (provider, identity)
 
 
@@ -497,9 +508,16 @@ def validate(plan, inventory, coverage, rendered_text):
     if defaults.get("securityImpactProfile"):
         _validate_sip_value(defaults["securityImpactProfile"], "defaults", errors)
 
-    plan_scopes = {scope_key(scope): scope for scope in plan.get("scopes", [])}
-    inventory_scopes = {scope_key(scope): scope
-                        for scope in inventory.get("scopes", [])}
+    try:
+        plan_scopes = {scope_key(scope): scope for scope in plan.get("scopes", [])}
+        inventory_scopes = {scope_key(scope): scope
+                            for scope in inventory.get("scopes", [])}
+    except (ValueError, TypeError) as exc:
+        return ["invalid cloud scope: %s" % exc]
+    if len(plan_scopes) != len(plan.get("scopes", [])):
+        errors.append("duplicate plan scope identity")
+    if len(inventory_scopes) != len(inventory.get("scopes", [])):
+        errors.append("duplicate inventory scope identity")
 
     # Check 4 (scope agreement): a scope on one side but not the other.
     for key in sorted(set(plan_scopes) - set(inventory_scopes)):

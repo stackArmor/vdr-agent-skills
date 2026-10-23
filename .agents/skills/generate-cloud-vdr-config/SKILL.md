@@ -1,18 +1,19 @@
 ---
 name: generate-cloud-vdr-config
-description: Generate or fully reassess vdr-cloud.yaml from read-only GCP/AWS discovery, including GKE infrastructure, secrets, KMS, IAM and workload/data resources. Assign independently dimensional CR/IR/AR profiles with confidence and a coverage ledger. For coverage-only updates preserving existing scores, use update-cloud-vdr-config instead. Never change infrastructure or publish without explicit authorization.
+description: Generate or fully reassess vdr-cloud.yaml from read-only GCP/AWS/Azure discovery, including GKE infrastructure, secrets, KMS, IAM and workload/data resources. Assign independently dimensional CR/IR/AR profiles with confidence and a coverage ledger. For coverage-only updates preserving existing scores, use update-cloud-vdr-config instead. Never change infrastructure or publish without explicit authorization.
 ---
 
 # Generate Cloud VDR Config
 
-Interview the operator, inventory the selected GCP projects and AWS accounts
+Interview the operator, inventory the selected GCP projects, AWS accounts, and Azure subscriptions
 read-only, and write the central `vdr-cloud.yaml` assignment surface plus an
 inventory baseline and a coverage ledger. This is the cloud analogue of
 `generate-k8s-vdr-configmap`: it does for buckets, VMs, managed SQL, and the other
 CIS Foundations-addressed cloud families what that skill does for Kubernetes
 workloads. In commands below, resolve `<skill-dir>` to the directory containing
 this file. Read `references/cloud-config-schema.md` and
-`references/managed-resource-patterns.md` before authoring rules.
+`references/managed-resource-patterns.md` before authoring rules. For Azure, also
+read `references/azure-inventory.md` completely.
 
 For an additive coverage update that must not reassess existing scores, use
 the separate `../update-cloud-vdr-config/SKILL.md` workflow instead.
@@ -21,7 +22,10 @@ the separate `../update-cloud-vdr-config/SKILL.md` workflow instead.
 
 - Run only read-only cloud verbs: `list`, `describe`, `get`,
   `sts get-caller-identity`, `gcloud config get-value`, `gcloud auth list`,
-  `gcloud projects list`, `gcloud asset list`. Never change cloud infrastructure,
+  `gcloud projects list`, `gcloud asset list`, and Azure `az account show`,
+  `az cloud show`, `az resource list/show`, and documented service `list` calls.
+  Never run `az login`, `az account set`, `az cloud set`, or install extensions.
+  Never change cloud infrastructure,
   replication, secret values, key state or IAM permissions. If the user explicitly
   requests policy publication, treat that as a separate step: validate locally,
   back up the exact previous object generation, upload only the named policy with
@@ -69,9 +73,10 @@ profile in **canonical dotted form**: a direct vector (`cr-h_ir-m_ar-l`), a
 compositional decision trace with exactly three segments
 (`<disclosure>.<trusted-change>.<dependency>`), or a named archetype from the
 optional catalog. Prefer a compositional trace. Provider label encodings (GCP
-`vdr_fedramp_io_*` keys, `__` trace separators, Azure `.` keys) apply only to
-actual cloud tags and are decoded at discovery — they never appear inside
-`vdr-cloud.yaml`.
+`vdr_fedramp_io_*` keys and `__` trace separators) apply to actual cloud labels and are decoded
+at discovery. Azure dotted tag keys remain metadata / explicit `matchTags`
+evidence unless the consumer accepts them as overrides; see the Azure reference.
+Provider encodings never appear in the YAML `securityImpactProfile` field.
 
 Read `../generate-k8s-vdr-configmap/references/archetype-guide.md` completely before
 assigning profiles. It defines direct vectors, the optional archetype system,
@@ -110,8 +115,9 @@ mkdir -p ./vdr-cloud-output
 # If re-running, remove or archive previous run artifacts first
 ```
 
-Ask whether this is a single-cloud account/project or multi-cloud account/project run. Each confirmed GCP project or
-AWS account becomes one `scopes:` entry.
+Ask which clouds and scopes are authorized. Each confirmed GCP project, AWS
+account, or Azure subscription becomes one `scopes:` entry. Azure scopes use
+`provider: azure` and `subscription: <uuid>`.
 
 - **AWS:** ask which named CLI profiles to use, one per account. Validate each
   with `aws sts get-caller-identity --profile <p>`, show the resolved account ID
@@ -125,6 +131,12 @@ AWS account becomes one `scopes:` entry.
 
 A scope whose inventory fails is **excluded** from the document and reported as
 failed — never emitted as a silently partial block.
+
+- **Azure:** use the current Azure CLI login and active Commercial or Government
+  cloud. Inspect `az cloud show` and `az account show --subscription <uuid>`,
+  show the subscription/tenant/principal/cloud, and confirm each scope before
+  inventory. Pin `--subscription` on every resource query. Do not switch cloud
+  or account, log in, install extensions, or expand to other visible subscriptions.
 
 ### 2. Inventory resources read-only
 
@@ -156,6 +168,21 @@ successful list is evidence of no visible resources in the queried scope. Nested
 enumeration covers locations, KMS rings/keys, service-account keys, repositories/
 images, AlloyDB clusters/instances and GKE node pools. IAM metadata remains
 attached-policy evidence, not complete effective access.
+
+Azure:
+
+```bash
+python3 <skill-dir>/scripts/inventory_cloud_resources.py \
+  --provider azure --subscription <confirmed-uuid> \
+  --output ./vdr-cloud-output/scope-azure-<subscription>.json
+```
+
+Read `references/azure-inventory.md` for supported types, child enumeration,
+metadata projections, Government cloud handling, failure reporting, and the
+short-name rule / full-ARM-ID coverage distinction. Preserve excluded type
+counts and collection warnings; do not claim unsupported or failed discovery
+as covered. Use `subscription` for the scope identity in plan, inventory,
+coverage, and rendered YAML.
 
 AWS:
 

@@ -20,7 +20,7 @@ scope. **Nothing is ever applied to a cluster or cloud account by an agent.**
 |-------------|---------|------------|
 | `python3` (>= 3.8) | Runs the inventory/capture scripts. Standard library only — no `pip install` needed. | All skills |
 | `kubectl` (authenticated) | Network access to the cluster API. **Read-only RBAC is sufficient** — `get`/`list` on workloads and namespaces (and, for `capture-dataflow-beta`, NetworkPolicies, mesh resources, and Secrets). | Kubernetes skills (`generate-k8s-vdr-configmap`, `update-k8s-vdr-configmap`, `capture-dataflow-beta`) |
-| `gcloud` and/or `aws` CLI (authenticated, read-only) | `list`/`describe`/`get` and `sts get-caller-identity`. The skills never run a mutating verb. | Cloud skills (`generate-cloud-vdr-config`, `update-cloud-vdr-config`) |
+| `gcloud`, `aws`, and/or `az` CLI (authenticated, read-only) | `list`/`describe`/`get` and `sts get-caller-identity`. The skills never run a mutating verb. | Cloud skills (`generate-cloud-vdr-config`, `update-cloud-vdr-config`) |
 | `terraform` | Optional, for formatting and offline validation of Terraform edits; never used to apply infrastructure. | `tag-terraform-vdr-assets` |
 
 `generate-security-objectives` needs no live access to Kubernetes or a cloud
@@ -118,7 +118,7 @@ both:
 | Skill | Target | Output | Live access |
 |-------|--------|--------|-------------|
 | `generate-k8s-vdr-configmap` | Kubernetes workloads | `vdr-fedramp` ConfigMap | `kubectl` |
-| `generate-cloud-vdr-config` | AWS & GCP resources (object storage, VMs, managed SQL, BigQuery, etc.) | `vdr-cloud.yaml` | `aws` / `gcloud` |
+| `generate-cloud-vdr-config` | AWS, Azure & GCP resources (object storage, VMs, managed SQL, BigQuery, etc.) | `vdr-cloud.yaml` | `aws` / `az` / `gcloud` |
 
 Invoke a skill by name or describe your intent, for example:
 
@@ -137,14 +137,28 @@ Then follow this workflow:
    - **ConfigMap:** apply it to your cluster yourself (`kubectl apply -f`). It
      can live in your GitOps repository alongside your other manifests.
    - **`vdr-cloud.yaml`:** upload it to cloud storage in your environment
-     (e.g., S3 or GCS). This can also be managed through GitOps.
+     (e.g., S3, Azure Blob Storage, or GCS). This can also be managed through GitOps.
+
+### Azure cloud classification
+
+Use `generate-cloud-vdr-config` with the existing Azure CLI login, explicitly
+confirmed subscriptions, and read-only permissions. Azure Commercial and US
+Government are supported. Azure scopes use `subscription`, and the same
+`vdr-cloud.yaml` covers Azure VM, managed database, storage, network, messaging,
+and Container Apps resource families. For coverage maintenance, use
+`update-cloud-vdr-config`.
+
+See [Azure inventory and identity rules](skills/generate-cloud-vdr-config/references/azure-inventory.md)
+and the [fictional Azure policy](skills/generate-cloud-vdr-config/assets/vdr-cloud.azure.example.yaml).
+The helper never changes cloud/account selection, installs extensions, or reads
+secret values. Preserve any failed collection warnings and excluded types.
 
 ## What the skills produce
 
 The core skills produce two outputs carrying the same classification metadata:
 
 - **Kubernetes workloads** — a `vdr-fedramp` ConfigMap
-- **Cloud resources (AWS & GCP, non-Kubernetes)** — a `vdr-cloud.yaml` file
+- **Cloud resources (AWS, Azure & GCP, non-Kubernetes)** — a `vdr-cloud.yaml` file
 
 Both capture your FedRAMP **Certification Class**, **agency scope** (single vs.
 multi-agency), and a security-impact profile for each asset, plus a coverage
@@ -165,7 +179,7 @@ five are available for specific needs but are not part of the standard flow.
 | Skill | Target | Output | Live access |
 |-------|--------|--------|-------------|
 | `generate-k8s-vdr-configmap` | Kubernetes workloads | `vdr-fedramp` ConfigMap | `kubectl` |
-| `generate-cloud-vdr-config` | AWS & GCP resources | `vdr-cloud.yaml` | `aws` / `gcloud` |
+| `generate-cloud-vdr-config` | AWS, Azure & GCP resources | `vdr-cloud.yaml` | `aws` / `az` / `gcloud` |
 
 ### Also available
 
@@ -173,7 +187,7 @@ five are available for specific needs but are not part of the standard flow.
 |-------|--------|--------|-------------|
 | `generate-security-objectives` | System and agency security objectives, from documentation and the NIST SP 800-60 catalog | Security objectives file with ceiling | None |
 | `update-k8s-vdr-configmap` | Updating an existing Kubernetes classification | Updated ConfigMap | `kubectl` |
-| `update-cloud-vdr-config` | Updating an existing cloud classification | Updated `vdr-cloud.yaml` | `aws` / `gcloud` |
+| `update-cloud-vdr-config` | Updating an existing cloud classification | Updated `vdr-cloud.yaml` | `aws` / `az` / `gcloud` |
 | `tag-terraform-vdr-assets` | Terraform-managed assets | Asset tags | See skill |
 | `capture-dataflow-beta` (**Beta**) | Data flows | See skill | See skill |
 
@@ -189,9 +203,9 @@ ledger with confidence and manual-review reporting.
 ### `generate-cloud-vdr-config` → the central `vdr-cloud.yaml`
 
 Extends the central-assignment model to **non-Kubernetes cloud resources**. It
-discovers CIS Foundations-addressed GCP and AWS resource families (object
+discovers CIS Foundations-addressed GCP, AWS, and Azure resource families (object
 storage, VMs, managed SQL, BigQuery datasets, and the rest) with read-only
-`gcloud`/`aws` CLIs, interviews the operator, and emits a single multi-scope
+`gcloud`/`aws`/`az` CLIs, interviews the operator, and emits a single multi-scope
 `vdr-cloud.yaml` (`CloudResourceScoringConfig`) plus an inventory baseline and a
 coverage ledger. Resources are matched by **name, tag, network, or type rules**
 with family-tier precedence, or by whole account/project defaults; each resolves
@@ -206,7 +220,7 @@ For details on the additional skills, see [Additional skill details](#additional
 
 ## Security posture: read-only, your credentials
 
-The skills run standard CLI commands through your local `kubectl`, `aws`, and
+The skills run standard CLI commands through your local `kubectl`, `aws`, `az`, and
 `gcloud` installations, using the credentials you already have configured.
 
 - **Read-only verbs only.** The skills and their scripts use only read-only
@@ -264,7 +278,7 @@ MIT — see [LICENSE](LICENSE).
 
 Update an existing Kubernetes or cloud classification, producing an updated
 `vdr-fedramp` ConfigMap or `vdr-cloud.yaml` respectively. They use the same
-read-only `kubectl` or `aws`/`gcloud` access as the corresponding generate
+read-only `kubectl` or `aws`/`az`/`gcloud` access as the corresponding generate
 skills.
 
 ### `generate-security-objectives` → `security-objectives.json`
@@ -322,3 +336,10 @@ review. The agent-assisted review also records **broker candidates** — possibl
 payload paths through cloud brokers (SQS, S3, Pub/Sub, GCS, ...) that Kubernetes
 alone cannot confirm — each with the workload-identity principal to verify
 against IAM later.
+
+## Development checks
+
+Use a virtual environment and install `tests/requirements.txt`, then run
+`python -m unittest discover -s tests`. Runtime discovery remains standard-library
+only; the test dependencies cover YAML, optional regex rules, and actual Azure
+CLI query projection semantics.

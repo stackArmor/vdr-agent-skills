@@ -209,9 +209,14 @@ def render(plan):
         if provider == "aws":
             scope_id = scope["account"]
             id_line = '    account: "%s"' % scope_id
-        else:
+        elif provider == "azure":
+            scope_id = str(scope["subscription"]).strip().lower()
+            id_line = "    subscription: %s" % _quote(scope_id, force=True)
+        elif provider == "gcp":
             scope_id = scope["project"]
             id_line = "    project: %s" % scope_id
+        else:
+            raise ValueError("unsupported cloud provider %r" % provider)
         scope_key = "%s/%s" % (provider, scope_id)
         _reject_broad_reachability(scope, scope_key)
         # First list-item line carries provider; identity is a continuation key.

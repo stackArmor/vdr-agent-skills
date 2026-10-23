@@ -97,8 +97,8 @@ scopes:
          securityImpactProfile: service-content.record-keeping.operations-support}
 ```
 
-One multi-scope document only: each GCP project / AWS account is one `scopes:`
-entry. There is no per-scope split file. A scope whose inventory failed is
+One multi-scope document only: each GCP project / AWS account / Azure subscription is one `scopes:`
+entry. Azure uses `provider: azure` with `subscription: "<uuid>"`. There is no per-scope split file. A scope whose inventory failed is
 excluded and reported, never emitted as a silently partial block.
 
 ## Resolution precedence
@@ -265,14 +265,29 @@ identities.
 | AWS | `AWS::ECS::Service` | ECS Service identifier (`cluster/service` or `service`) |
 | AWS | `AWS::ECS::Cluster` | ECS Cluster name |
 
+### Azure identifiers and discovery
+
+Azure Commercial and Government subscriptions are discovered through read-only
+`az` CLI commands. See [Azure inventory](azure-inventory.md) for supported ARM
+types, explicit subscription selection, safe projections, and partial coverage.
+
+Azure inventory `identifier` / `providerUri` retain the complete normalized ARM
+ID for coverage. `nameRules` match the separate short `name`, including a final
+child name, to match TSW. Pin `type` and inspect same-name matches across resource
+groups; use appropriate tag/region constraints for narrower assignments.
+Network/subnet rules support known full ARM IDs or short names case-insensitively.
+Storage accounts are not network-attached rule targets.
+
 ## Value and comment conventions
 
 - SIP values use **canonical dotted form** inside this document: a direct
   vector (`cr-h_ir-m_ar-l`), a governed decision trace
   (`<disclosure>.<trusted-change>.<dependency>`), or a named archetype. Provider
-  label encodings (GCP `vdr_fedramp_io_*` keys and `__` trace separators, Azure
-  `.` keys) apply only to actual cloud tags and are decoded at discovery; they
-  never appear inside `vdr-cloud.yaml`. See
+  label encodings apply to actual cloud tags. GCP `vdr_fedramp_io_*` keys and
+  `__` trace separators are decoded at discovery. Azure dotted tags remain
+  metadata / explicit `matchTags` evidence unless the deployed consumer accepts
+  them as overrides; see [Azure inventory](azure-inventory.md). Provider
+  encodings never appear in the YAML `securityImpactProfile` value. See
   `../../tag-terraform-vdr-assets/references/cis-asset-map.md` for the encoding
   rules.
 - `class`, `multiAgency`, and `internetReachable` are quoted strings
@@ -405,9 +420,10 @@ script source.
 
 Field notes:
 
-- **Scope identity.** GCP scopes carry `"project": "<id>"`; AWS scopes carry
+- **Scope identity.** Azure scopes carry `"subscription": "<uuid>"` with
+  `"provider": "azure"`. GCP scopes carry `"project": "<id>"`; AWS scopes carry
   `"account": "<12-digit-id>"`. The scope key used everywhere (coverage,
-  validation, reports) is `"<provider>/<project-or-account>"`.
+  validation, reports) is `"<provider>/<project-account-or-subscription>"`.
 - **Attestations** (`class`, `multiAgency` at the defaults and scope levels) are
   objects with `value`, `confidence` (`high|medium|low`), `evidence`, and a
   `manualReview` list. A non-high confidence with an empty `manualReview` is a

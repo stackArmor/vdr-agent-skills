@@ -1,0 +1,22 @@
+# Fictional Azure subscription; replace only after operator review.
+apiVersion: vdr.fedramp.io/v1alpha1
+kind: CloudResourceScoringConfig
+defaults:
+  class: "C"
+  multiAgency: "false"
+scopes:
+  - provider: azure
+    subscription: "00000000-0000-0000-0000-000000000000"
+    class: "C"
+    multiAgency: "false"
+    nameRules:
+      - type: Microsoft.Compute/virtualMachines
+        match: "web-*"
+        securityImpactProfile: service-content.bounded-processing.bounded-service
+    tagRules:
+      - type: Microsoft.Storage/storageAccounts
+        matchTags: {data-class: federal-records}
+        securityImpactProfile: federal-records.authoritative-record.mission-essential
+    typeRules:
+      - type: Microsoft.Sql/servers/databases
+        securityImpactProfile: federal-records.authoritative-record.mission-essential

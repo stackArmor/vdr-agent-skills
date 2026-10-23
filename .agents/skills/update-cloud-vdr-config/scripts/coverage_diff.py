@@ -11,6 +11,7 @@ import fnmatch
 import importlib.util
 import json
 import sys
+import uuid
 from collections import Counter
 from pathlib import Path
 
@@ -83,9 +84,12 @@ def scoring(configmap):
 
 def scope_key(scope):
     provider = scope.get("provider")
-    identity = scope.get("account") if provider == "aws" else scope.get("project")
-    if provider not in ("gcp", "aws") or not identity:
+    field = {"gcp": "project", "aws": "account", "azure": "subscription"}.get(provider)
+    identity = scope.get(field) if field else None
+    if not isinstance(identity, str) or not identity.strip():
         raise ValueError("invalid scope identity")
+    if provider == "azure":
+        identity = str(uuid.UUID(identity.strip()))
     return f"{provider}/{identity}"
 
 

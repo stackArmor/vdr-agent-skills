@@ -489,6 +489,11 @@ def inventory_aws(profile, regions, patterns, runner=run_command):
     }
 
 
+def inventory_azure(subscription, patterns, runner=run_command):
+    from azure_inventory import discover
+    return discover(subscription, patterns, runner, _build_resource, summarize_tags)
+
+
 def merge_scopes(scope_docs):
     resource_count = 0
     by_type = {}
@@ -511,8 +516,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Inventory cloud resources and annotate them for VDR "
                     "config generation.")
-    parser.add_argument("--provider", choices=["gcp", "aws"])
+    parser.add_argument("--provider", choices=["gcp", "aws", "azure"])
     parser.add_argument("--project")
+    parser.add_argument("--subscription")
     parser.add_argument("--profile")
     parser.add_argument("--region", action="append")
     parser.add_argument("--no-asset-api", action="store_true",
@@ -541,6 +547,13 @@ def main(argv=None):
                 parser.error("at least one --region is required for "
                              "--provider aws")
             document = inventory_aws(args.profile, args.region, patterns)
+        elif args.provider == "azure":
+            if not args.subscription:
+                parser.error("--subscription is required for --provider azure")
+            try:
+                document = inventory_azure(args.subscription, patterns)
+            except ValueError as exc:
+                parser.error(str(exc))
         else:
             if not args.project:
                 parser.error("--project is required for --provider gcp")
