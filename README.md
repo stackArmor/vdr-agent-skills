@@ -141,6 +141,9 @@ Then follow this workflow:
 
 ## What the skills produce
 
+For the integration-facing field definitions, agency-scope rule, and profile
+taxonomy, see the [VDR metadata contract](docs/metadata-contract.md).
+
 The core skills produce two outputs carrying the same classification metadata:
 
 - **Kubernetes workloads** — a `vdr-fedramp` ConfigMap
