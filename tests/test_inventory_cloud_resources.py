@@ -499,9 +499,10 @@ class AwsInventoryTests(unittest.TestCase):
             ("ecs list-task-definitions",
              {"taskDefinitionArns": ["arn:aws:ecs:us-east-1:123456789012:task-definition/api-server:4"]}),
             ("ecs describe-task-definition",
-             {"tags": [{"Key": "env", "Value": "prod"}]}),
+             {"tags": [{"key": "env", "value": "prod"}]}),
             ("ecs list-clusters",
              {"clusterArns": ["arn:aws:ecs:us-east-1:123456789012:cluster/prod-cluster"]}),
+            ("ecs describe-clusters", {"clusters": [{"tags": [{"key": "env", "value": "prod"}]}]}),
             ("ecs list-services",
              {"serviceArns": ["arn:aws:ecs:us-east-1:123456789012:service/prod-cluster/api-svc"]}),
             ("ecs describe-services",
@@ -526,7 +527,11 @@ class AwsInventoryTests(unittest.TestCase):
         self.assertIn("aws-cloudformation-managed", ec2["builtinPatterns"])
         self.assertEqual("AWS::RDS::DBInstance", by_id["prod-db"]["type"])
         self.assertEqual("AWS::ECS::TaskDefinition", by_id["api-server:4"]["type"])
+        self.assertEqual({"env": "prod"}, by_id["api-server:4"]["tags"])
         self.assertEqual("AWS::ECS::Service", by_id["prod-cluster/api-svc"]["type"])
+        self.assertEqual("AWS::ECS::Cluster", by_id["prod-cluster"]["type"])
+        self.assertEqual({"env": "prod"}, by_id["prod-cluster"]["tags"])
+        self.assertIn(":task-definition/api-server:4", by_id["api-server:4"]["providerUri"])
         # every aws call pins the confirmed profile
         for call in runner.calls:
             if call and call[0] == "aws":

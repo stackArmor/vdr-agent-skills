@@ -8,7 +8,7 @@ the cloud analogue of the `vdr-fedramp` scoring ConfigMap. Per-resource
 `vdr.fedramp.io/*` tags (the `tag-terraform-vdr-assets` path) remain valid but
 are demoted to the exception/override mechanism.
 
-**TSW consumes this policy. `trivy-plugin-vdr` does not consume it today.**
+**TSW consumes this policy automatically in managed deployments.** The plugin can optionally consume the same file with `--cloud-config FILE` for standalone ECS/Cloud Run scans. Managed TCS jobs leave the flag unset.
 Rules become effective only when the deployed consumer collects their resource
 types and accepts the document. Do not claim coverage from YAML alone.
 

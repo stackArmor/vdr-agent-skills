@@ -351,7 +351,7 @@ def _aws_json(runner, service_args, profile, region=None):
 
 
 def _kv_list_to_dict(pairs):
-    return {pair.get("Key"): pair.get("Value") for pair in (pairs or [])}
+    return {pair.get("Key", pair.get("key")): pair.get("Value", pair.get("value")) for pair in (pairs or []) if pair.get("Key", pair.get("key"))}
 
 
 def _aws_bucket_tags(runner, profile, bucket, warnings):
@@ -434,6 +434,7 @@ def _aws_region_inventory(runner, profile, region, provider_patterns, warnings=N
             resources.append(_build_resource(
                 "AWS::ECS::TaskDefinition", family_rev, region, tags, None, None,
                 provider_patterns, provider="aws"))
+            resources[-1]["providerUri"] = arn
     except RuntimeError as exc:
         first_line = str(exc).splitlines()[0] if str(exc) else ""
         warnings.append("ECS task definitions were not enumerated for region %s: %s" % (region, first_line))
@@ -442,6 +443,17 @@ def _aws_region_inventory(runner, profile, region, provider_patterns, warnings=N
         clusters = _aws_json(runner, ["ecs", "list-clusters"], profile, region)
         for cluster_arn in (clusters.get("clusterArns") or []):
             cluster_name = _last_segment(cluster_arn)
+            cluster_tags = {}
+            try:
+                detail = _aws_json(runner, ["ecs", "describe-clusters", "--clusters", cluster_arn, "--include", "TAGS"], profile, region)
+                if detail.get("failures"):
+                    raise RuntimeError("ECS cluster describe reported failures")
+                cluster_tags = _kv_list_to_dict((detail.get("clusters") or [{}])[0].get("tags"))
+            except RuntimeError:
+                warnings.append("ECS cluster tags could not be read for %s in %s" % (cluster_name, region))
+            cluster_resource = _build_resource("AWS::ECS::Cluster", cluster_name, region, cluster_tags, None, None, provider_patterns, provider="aws")
+            cluster_resource["providerUri"] = cluster_arn
+            resources.append(cluster_resource)
             try:
                 services = _aws_json(runner, ["ecs", "list-services", "--cluster", cluster_arn], profile, region)
                 service_arns = services.get("serviceArns") or []
@@ -460,6 +472,7 @@ def _aws_region_inventory(runner, profile, region, provider_patterns, warnings=N
                             resources.append(_build_resource(
                                 "AWS::ECS::Service", f"{cluster_name}/{svc_name}", region, svc_tags, network, subnet,
                                 provider_patterns, provider="aws"))
+                            resources[-1]["providerUri"] = svc.get("serviceArn") or next((arn for arn in batch if arn.rsplit("/", 1)[-1] == svc_name), "")
             except RuntimeError:
                 pass
     except RuntimeError as exc:

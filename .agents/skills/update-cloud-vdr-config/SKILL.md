@@ -160,7 +160,7 @@ delta helper; use an existing environment with it or report the missing parser.
 Report covered-unchanged, gap, proposed-addition and blocker counts by scope,
 new/unknown identities, every failed/degraded scope, and manual-review decisions.
 State explicitly that existing scores were preserved, not re-evaluated. TSW
-consumes this policy; trivy-plugin-vdr does not. No changes should be emitted
+consumes this policy automatically. For standalone local/CI ECS or Cloud Run scans, plugin builds supporting `--cloud-config FILE` can consume the same document. Managed TCS jobs leave that flag unset. No changes should be emitted
 when there are no gaps. Partial discovery cannot establish exhaustive coverage.
 
 All outputs stay local. A request to update coverage is not authorization to
