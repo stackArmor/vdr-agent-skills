@@ -42,7 +42,7 @@ the separate `../update-cloud-vdr-config/SKILL.md` workflow instead.
   or `vdr-cloud.yaml` files. Run the full operator interview fresh for Class,
   agency scope, and consequence; never treat historical artifacts or prior runs
   as current operator attestations.
-- **TSW consumes `vdr-cloud.yaml`; `trivy-plugin-vdr` does not.** Verify the
+- **TSW consumes `vdr-cloud.yaml` automatically in managed deployments.** The plugin also supports an optional `--cloud-config FILE` for standalone local/CI scans of ECS and Cloud Run; managed TCS jobs leave it unset. Verify the
   consumer's supported types and collection capabilities before claiming runtime
   coverage. Published rules for undeployed support remain pending rollout.
 - Treat the document as the **primary** assignment surface for every inventoried
@@ -387,9 +387,27 @@ fictional rendered two-scope document.
 Report totals by scope, status (`operator-confirmed`, `agent-inferred`,
 `builtin-pattern`), and confidence. Repeat the non-high-confidence manual-review
 list in the terminal; do not hide it behind the YAML. State the
-consumer caveat plainly: TSW consumes `vdr-cloud.yaml`, but `trivy-plugin-vdr`
-does not; runtime coverage requires the deployed collectors and type support.
+consumer caveat plainly: TSW automatically consumes `vdr-cloud.yaml` in managed
+deployments. Standalone ECS/Cloud Run plugin builds can optionally use
+`--cloud-config FILE`; verify that the installed version supports it. Managed
+TCS jobs leave it unset. Runtime coverage still requires deployed collectors,
+identity matching, and policy type support.
 List any failed scopes and any existing-tag override
 conflicts. Tell the operator to review all three artifacts and version them
 manually or through the owning GitOps repository. Re-run the skill after estate,
 Class, or scope changes.
+
+### ECS assignment boundaries
+
+Discovery emits task definitions, services, and clusters and retains their full
+ARNs as `providerUri`. Container findings identify the **task-definition revision**
+(`family:revision`), so assign that type explicitly. A service or cluster rule does
+not implicitly assign its task definitions. Verify deployed TSW ECS inventory,
+ARN matching, and policy type support before claiming effective runtime coverage.
+Record undeployed support as pending rollout even when the YAML validates.
+
+For standalone plugin use, select the same account/project scope and preserve the
+policy digest and assignment evidence. Some network rules require inventory facts
+that standalone collectors do not provide; the plugin must report that limitation
+rather than silently applying a broader fallback. Never advise using
+`--scoring-config` to pass a `CloudResourceScoringConfig` document.
