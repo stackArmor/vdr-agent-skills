@@ -20,7 +20,7 @@ scope. **Nothing is ever applied to a cluster or cloud account by an agent.**
 |-------------|---------|------------|
 | `python3` (>= 3.8) | Runs the inventory/capture scripts. Standard library only — no `pip install` needed. | All skills |
 | `kubectl` (authenticated) | Network access to the cluster API. **Read-only RBAC is sufficient** — `get`/`list` on workloads and namespaces (and, for `capture-dataflow-beta`, NetworkPolicies, mesh resources, and Secrets). | Kubernetes skills (`generate-k8s-vdr-configmap`, `update-k8s-vdr-configmap`, `capture-dataflow-beta`) |
-| `gcloud`, `aws`, and/or `az` CLI (authenticated, read-only) | `list`/`describe`/`get` and `sts get-caller-identity`. The skills never run a mutating verb. | Cloud skills (`generate-cloud-vdr-config`, `update-cloud-vdr-config`) |
+| `gcloud`, `aws`, and/or `az` CLI (authenticated, read-only) | `list`/`describe`/`get` and `sts get-caller-identity`. The skills never run a mutating verb. See [Least-privilege permissions](#least-privilege-permissions). | Cloud skills (`generate-cloud-vdr-config`, `update-cloud-vdr-config`) |
 | `terraform` | Optional, for formatting and offline validation of Terraform edits; never used to apply infrastructure. | `tag-terraform-vdr-assets` |
 
 `generate-security-objectives` needs no live access to Kubernetes or a cloud
@@ -249,6 +249,34 @@ The skills run standard CLI commands through your local `kubectl`, `aws`, `az`, 
   each skill makes a conservative, evidence-backed assessment and exposes its
   confidence and review needs. HA is mitigation evidence and never lowers the
   Availability Requirement.
+
+### Least-privilege permissions
+
+The skills need only read access. These are the limited roles required.
+
+#### GCP and GKE
+
+| Role | Purpose |
+|------|---------|
+| `roles/container.viewer` | Read GKE clusters and their Kubernetes objects (excluding Secret values) |
+| `roles/cloudasset.viewer` | Cloud Asset Inventory search and listing |
+| `roles/iam.securityReviewer` | Read IAM policies, service accounts, and roles |
+| `roles/containeranalysis.occurrences.viewer` | Read Artifact Analysis vulnerability occurrences |
+| `roles/containeranalysis.notes.viewer` | Read Artifact Analysis vulnerability notes |
+| `roles/osconfig.vulnerabilityReportViewer` | Read VM OS vulnerability reports |
+| `roles/osconfig.inventoryViewer` | Read VM OS package inventory |
+| `roles/compute.viewer` | Read VMs, networks, firewalls, and load balancers |
+| `roles/securitycenter.findingsViewer` | Read Security Command Center findings |
+| `roles/run.viewer` | Read Cloud Run services and jobs |
+
+`roles/container.viewer` also covers the GKE Kubernetes API reads used by the
+Kubernetes skills. `capture-dataflow-beta` additionally reads Secrets to
+derive connection endpoints, which requires Kubernetes RBAC read access to
+Secrets in the namespaces in scope.
+
+#### AWS
+
+#### Azure
 
 ## How the outputs are consumed
 
