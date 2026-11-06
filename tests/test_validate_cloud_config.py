@@ -235,6 +235,34 @@ class ValidateTests(unittest.TestCase):
         errors = self.mod.validate(plan, inventory, coverage, self.render(plan))
         self.assertTrue(any("shadow" in e for e in errors))
 
+    def _two_region_fixture(self):
+        import copy
+        plan, inventory, coverage = self.build()
+        res_east = copy.deepcopy(inventory["scopes"][0]["resources"][0])
+        res_west = copy.deepcopy(res_east)
+        res_east["region"], res_west["region"] = "us-gov-east-1", "us-gov-west-1"
+        inventory["scopes"][0]["resources"] = [res_east, res_west]
+        inventory["summary"]["resourceCount"] = 2
+        a_east = copy.deepcopy(coverage["assignments"][0])
+        a_west = copy.deepcopy(a_east)
+        a_east["region"], a_west["region"] = "us-gov-east-1", "us-gov-west-1"
+        coverage["assignments"] = [a_east, a_west]
+        coverage["inventoryTotal"] = 2
+        return plan, inventory, coverage
+
+    def test_same_identifier_in_two_regions_is_not_duplicate(self):
+        plan, inventory, coverage = self._two_region_fixture()
+        errors = self.mod.validate(plan, inventory, coverage, self.render(plan))
+        self.assertFalse(any("appears" in e or "inventory equation" in e
+                             for e in errors), errors)
+
+    def test_cross_region_collision_requires_region_on_assignment(self):
+        plan, inventory, coverage = self._two_region_fixture()
+        for a in coverage["assignments"]:
+            del a["region"]
+        errors = self.mod.validate(plan, inventory, coverage, self.render(plan))
+        self.assertTrue(any("inventory equation" in e for e in errors))
+
     def test_coverage_accounting_mismatch_fails(self):
         plan, inventory, coverage = self.build()
         coverage["assignments"] = []

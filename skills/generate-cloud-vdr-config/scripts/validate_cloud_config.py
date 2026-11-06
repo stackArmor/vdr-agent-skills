@@ -296,6 +296,27 @@ def scope_key(scope):
     return "%s/%s" % (provider, identity)
 
 
+def _regional_collisions(inventory):
+    """(scope, type, identifier) triples that recur in more than one region.
+
+    Only these need region in their coverage key; every other resource keeps
+    the three-part key, so existing coverage files stay valid.
+    """
+    regions = {}
+    for scope in inventory.get("scopes", []):
+        key = scope_key(scope)
+        for res in scope.get("resources", []):
+            regions.setdefault((key, res["type"], res["identifier"]),
+                               set()).add(res.get("region"))
+    return {k for k, r in regions.items() if len(r) > 1}
+
+
+def coverage_key(scope, rtype, identifier, region, collisions):
+    """Coverage key; includes region only when the identifier is ambiguous."""
+    base = (scope, rtype, identifier)
+    return base + (region,) if base in collisions else base
+
+
 def _required_field(family):
     return {"nameRules": "match", "tagRules": "matchTags",
             "networkRules": "network", "typeRules": "type"}[family]
@@ -422,7 +443,7 @@ def _check_resolution_replay(scope, key, resources, defaults, errors):
                           % (key, res["identifier"]))
 
 
-def _check_inventory_equation(inventory, coverage, errors):
+def _check_inventory_equation(inventory, coverage, errors, collisions=frozenset()):
     """Check 7: inventory count == coverage total == assignments, one each."""
     resource_count = inventory.get("summary", {}).get("resourceCount")
     inventory_total = coverage.get("inventoryTotal")
@@ -435,8 +456,9 @@ def _check_inventory_equation(inventory, coverage, errors):
 
     assignment_keys = {}
     for assignment in assignments:
-        akey = (assignment.get("scope"), assignment.get("type"),
-                assignment.get("identifier"))
+        akey = coverage_key(assignment.get("scope"), assignment.get("type"),
+                            assignment.get("identifier"),
+                            assignment.get("region"), collisions)
         assignment_keys[akey] = assignment_keys.get(akey, 0) + 1
     for akey, count in assignment_keys.items():
         if count != 1:
@@ -447,22 +469,25 @@ def _check_inventory_equation(inventory, coverage, errors):
     for scope in inventory.get("scopes", []):
         key = scope_key(scope)
         for res in scope.get("resources", []):
-            rkey = (key, res["type"], res["identifier"])
+            rkey = coverage_key(key, res["type"], res["identifier"],
+                                res.get("region"), collisions)
             inventory_keys.add(rkey)
             if rkey not in assignment_keys:
-                errors.append("inventory equation violated: %s/%s/%s has no "
-                              "assignment" % rkey)
+                errors.append("inventory equation violated: %s has no "
+                              "assignment" % "/".join(str(p) for p in rkey))
     for akey in assignment_keys:
         if akey not in inventory_keys:
-            errors.append("inventory equation violated: assignment %s/%s/%s "
-                          "matches no inventoried resource" % akey)
+            errors.append("inventory equation violated: assignment %s "
+                          "matches no inventoried resource"
+                          % "/".join(str(p) for p in akey))
 
 
-def _check_assignments(coverage, resolved_by_key, errors):
+def _check_assignments(coverage, resolved_by_key, errors, collisions=frozenset()):
     """Check 8: coverage entries agree with the replayed resolution."""
     for assignment in coverage.get("assignments") or []:
-        akey = (assignment.get("scope"), assignment.get("type"),
-                assignment.get("identifier"))
+        akey = coverage_key(assignment.get("scope"), assignment.get("type"),
+                            assignment.get("identifier"),
+                            assignment.get("region"), collisions)
         label = "/".join(str(p) for p in akey)
         resolved = resolved_by_key.get(akey)
         if resolved is None:
@@ -531,6 +556,7 @@ def validate(plan, inventory, coverage, rendered_text):
 
     # Checks 4, 5, 6 over scopes present on both sides.
     resolved_by_key = {}
+    collisions = _regional_collisions(inventory)
     for key in sorted(set(plan_scopes) & set(inventory_scopes)):
         scope = plan_scopes[key]
         resources = inventory_scopes[key].get("resources", [])
@@ -542,14 +568,15 @@ def validate(plan, inventory, coverage, rendered_text):
         _check_zero_match_and_shadow(scope, key, matched, errors)
         _check_resolution_replay(scope, key, resources, defaults, errors)
         for res in resources:
-            resolved_by_key[(key, res["type"], res["identifier"])] = \
+            resolved_by_key[coverage_key(key, res["type"], res["identifier"],
+                                         res.get("region"), collisions)] = \
                 resolve(res, scope, defaults, resources)
 
     # Check 7 (inventory equation).
-    _check_inventory_equation(inventory, coverage, errors)
+    _check_inventory_equation(inventory, coverage, errors, collisions)
 
     # Check 8 (per-assignment cross-check).
-    _check_assignments(coverage, resolved_by_key, errors)
+    _check_assignments(coverage, resolved_by_key, errors, collisions)
 
     # Check 9 (rendered drift).
     try:
