@@ -49,8 +49,11 @@ the separate `../update-cloud-vdr-config/SKILL.md` workflow instead.
   strongest evidence-backed best guess, state every assumption, and mark its
   confidence. When Class or agency scope is unattested, emit fail-closed
   provisional values (class `"D"`, multiAgency `"true"`) with confidence and
-  manual-review annotations; missing answers never withhold the artifact. Never
-  present an inference as an operator attestation.
+  manual-review annotations; missing answers never withhold the artifact.
+  The Armory is a GSS operating under the FedRAMP High (Class D) baseline;
+  never infer `class: "C"` (Moderate) from underlying cloud provider components
+  (such as Google Cloud managed service listings) or sibling tenant configurations.
+  Never present an inference as an operator attestation.
 - Account for every inventoried resource. Ordinary uncertainty is not an
   unresolved exception: assign the strongest credible profile, lower its
   confidence, and flag it for review. Reserve failure for technical validation

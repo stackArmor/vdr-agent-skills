@@ -94,6 +94,16 @@ Map the existing FedRAMP authorization to Certification Class:
 | FedRAMP Moderate | C |
 | FedRAMP High | D |
 
+> [!IMPORTANT]
+> **Mandatory Interview Before Classification**:
+> You MUST explicitly ask the operator to confirm the tenant's FedRAMP Certification Class (using the interactive question tool `ask_question` when available) before proceeding with workload evaluation.
+>
+> **Armory Baseline Guardrail & Fail-Closed Default**:
+> - The Armory is an underlying General Support System (GSS) designed and authorized to the **FedRAMP High (Class D)** baseline.
+> - Tenants hosted on The Armory default to **Class D** (`class: "D"`), unless the operator explicitly attests to a Moderate (Class C) or Low (Class B) authorization boundary.
+> - **Never infer `class: "C"` (Moderate) from underlying cloud provider components** (such as Google Cloud managed service listings) or sibling tenant configurations.
+> - If the operator does not provide an explicit class or the interview is run non-interactively without an override, you MUST fail-closed to `class: "D"` with `# confidence: low` and `# manual-review: Confirm FedRAMP Certification Class is D (High) or C (Moderate) with tenant compliance officer.`
+
 Ask the operator to confirm the Class. Then ask for the cluster-wide
 `multiAgency` default, explaining that this is largely an architectural
 consequence of their multi-tenancy strategy:
@@ -119,8 +129,7 @@ Record operator attestations for any exceptions and emit corresponding
 workload- or namespace-level `vdr.fedramp.io/multi-agency` labels or ConfigMap
 rules. Do not infer this flag from workload population alone.
 
-If either value remains unanswered, infer it from explicit authorization or
-tenant evidence when available. Otherwise emit fail-closed provisional values
+If either value remains unanswered, emit fail-closed provisional values
 (`D` and `true`), annotate each assumed value immediately above its YAML key
 with `# confidence: low` and `# manual-review: ...`, record the assumption in
 the coverage ledger, and include it in the terminal review report. Missing
