@@ -1,4 +1,4 @@
-# Fictional example for a FedRAMP Moderate, single-agency Kubernetes estate.
+# Fictional example for a FedRAMP High, single-agency Kubernetes estate on The Armory.
 # The compositional strings are exact decision traces resolved natively to
 # independent CR/IR/AR security-impact profiles.
 apiVersion: v1
@@ -12,8 +12,8 @@ metadata:
   name: vdr-fedramp
   namespace: fedramp-vdr-trivy
 data:
-  # confidence: high | operator-confirmed FedRAMP Moderate authorization
-  class: "C"
+  # confidence: high | operator-confirmed FedRAMP High authorization (standard for The Armory)
+  class: "D"
   # confidence: high | operator-confirmed single-agency deployment
   multiAgency: "false"
 
